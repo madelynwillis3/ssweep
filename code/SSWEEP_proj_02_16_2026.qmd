@@ -77,7 +77,7 @@ head(surface_sampling_weed)
 
 ###### With circle size scaled by total abundance and fill opacity scaled by dominance share. Use an imagery basemap and a color palette for families. Include legends for both size and opacity.
 
-```{r weed map, message=FALSE, warning=FALSE}
+```{r weed map, warning=FALSE}
 
 
 # ---- 1) dominant family + dominance share ----

@@ -1,0 +1,811 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en"><head>
+
+<meta charset="utf-8">
+<meta name="generator" content="quarto-1.8.25">
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+
+
+<title>SSWEEP_proj_02_16_2026</title>
+<style>
+code{white-space: pre-wrap;}
+span.smallcaps{font-variant: small-caps;}
+div.columns{display: flex; gap: min(4vw, 1.5em);}
+div.column{flex: auto; overflow-x: auto;}
+div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+ul.task-list{list-style: none;}
+ul.task-list li input[type="checkbox"] {
+  width: 0.8em;
+  margin: 0 0.8em 0.2em -1em; /* quarto-specific, see https://github.com/quarto-dev/quarto-cli/issues/4556 */ 
+  vertical-align: middle;
+}
+/* CSS for syntax highlighting */
+html { -webkit-text-size-adjust: 100%; }
+pre > code.sourceCode { white-space: pre; position: relative; }
+pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
+pre > code.sourceCode > span:empty { height: 1.2em; }
+.sourceCode { overflow: visible; }
+code.sourceCode > span { color: inherit; text-decoration: inherit; }
+div.sourceCode { margin: 1em 0; }
+pre.sourceCode { margin: 0; }
+@media screen {
+div.sourceCode { overflow: auto; }
+}
+@media print {
+pre > code.sourceCode { white-space: pre-wrap; }
+pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
+}
+pre.numberSource code
+  { counter-reset: source-line 0; }
+pre.numberSource code > span
+  { position: relative; left: -4em; counter-increment: source-line; }
+pre.numberSource code > span > a:first-child::before
+  { content: counter(source-line);
+    position: relative; left: -1em; text-align: right; vertical-align: baseline;
+    border: none; display: inline-block;
+    -webkit-touch-callout: none; -webkit-user-select: none;
+    -khtml-user-select: none; -moz-user-select: none;
+    -ms-user-select: none; user-select: none;
+    padding: 0 4px; width: 4em;
+  }
+pre.numberSource { margin-left: 3em;  padding-left: 4px; }
+div.sourceCode
+  {   }
+@media screen {
+pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+}
+</style>
+
+
+<script src="SSWEEP_proj_02_16_2026_files/libs/clipboard/clipboard.min.js"></script>
+<script src="SSWEEP_proj_02_16_2026_files/libs/quarto-html/quarto.js" type="module"></script>
+<script src="SSWEEP_proj_02_16_2026_files/libs/quarto-html/tabsets/tabsets.js" type="module"></script>
+<script src="SSWEEP_proj_02_16_2026_files/libs/quarto-html/axe/axe-check.js" type="module"></script>
+<script src="SSWEEP_proj_02_16_2026_files/libs/quarto-html/popper.min.js"></script>
+<script src="SSWEEP_proj_02_16_2026_files/libs/quarto-html/tippy.umd.min.js"></script>
+<script src="SSWEEP_proj_02_16_2026_files/libs/quarto-html/anchor.min.js"></script>
+<link href="SSWEEP_proj_02_16_2026_files/libs/quarto-html/tippy.css" rel="stylesheet">
+<link href="SSWEEP_proj_02_16_2026_files/libs/quarto-html/quarto-syntax-highlighting-7b89279ff1a6dce999919e0e67d4d9ec.css" rel="stylesheet" id="quarto-text-highlighting-styles">
+<script src="SSWEEP_proj_02_16_2026_files/libs/bootstrap/bootstrap.min.js"></script>
+<link href="SSWEEP_proj_02_16_2026_files/libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
+<link href="SSWEEP_proj_02_16_2026_files/libs/bootstrap/bootstrap-9e3ffae467580fdb927a41352e75a2e0.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="light">
+<link href="SSWEEP_proj_02_16_2026_files/libs/htmltools-fill-0.5.9/fill.css" rel="stylesheet">
+
+<script src="SSWEEP_proj_02_16_2026_files/libs/htmlwidgets-1.6.4/htmlwidgets.js"></script>
+
+<script src="SSWEEP_proj_02_16_2026_files/libs/jquery-3.6.0/jquery-3.6.0.min.js"></script>
+
+<link href="SSWEEP_proj_02_16_2026_files/libs/leaflet-1.3.1/leaflet.css" rel="stylesheet">
+
+<script src="SSWEEP_proj_02_16_2026_files/libs/leaflet-1.3.1/leaflet.js"></script>
+
+<link href="SSWEEP_proj_02_16_2026_files/libs/leafletfix-1.0.0/leafletfix.css" rel="stylesheet">
+
+<script src="SSWEEP_proj_02_16_2026_files/libs/proj4-2.6.2/proj4.min.js"></script>
+
+<script src="SSWEEP_proj_02_16_2026_files/libs/Proj4Leaflet-1.0.1/proj4leaflet.js"></script>
+
+<link href="SSWEEP_proj_02_16_2026_files/libs/rstudio_leaflet-1.3.1/rstudio_leaflet.css" rel="stylesheet">
+
+<script src="SSWEEP_proj_02_16_2026_files/libs/leaflet-binding-2.2.3/leaflet.js"></script>
+
+<script src="SSWEEP_proj_02_16_2026_files/libs/leaflet-providers-2.0.0/leaflet-providers_2.0.0.js"></script>
+
+<script src="SSWEEP_proj_02_16_2026_files/libs/leaflet-providers-plugin-2.2.3/leaflet-providers-plugin.js"></script>
+
+
+
+</head>
+
+<body class="fullcontent quarto-light">
+
+<div id="quarto-content" class="page-columns page-rows-contents page-layout-article">
+
+<main class="content" id="quarto-document-content">
+
+<header id="title-block-header" class="quarto-title-block default">
+<div class="quarto-title">
+<h1 class="title">SSWEEP_proj_02_16_2026</h1>
+</div>
+
+
+
+<div class="quarto-title-meta">
+
+    
+  
+    
+  </div>
+  
+
+
+</header>
+
+
+<section id="load-libraries" class="level5">
+<h5 class="anchored" data-anchor-id="load-libraries">Load libraries</h5>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb1"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="co">#libraries</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(tidyverse)</span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(sf)</span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(ggplot2)</span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(readxl)</span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(terra)</span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(ranger)</span>
+<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(viridis)</span>
+<span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(janitor)</span>
+<span id="cb1-10"><a href="#cb1-10" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(randomForest)</span>
+<span id="cb1-11"><a href="#cb1-11" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(purrr)</span>
+<span id="cb1-12"><a href="#cb1-12" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(reshape2)</span>
+<span id="cb1-13"><a href="#cb1-13" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(leaflet)</span>
+<span id="cb1-14"><a href="#cb1-14" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(scales)</span>
+<span id="cb1-15"><a href="#cb1-15" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(htmltools)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+</section>
+<section id="load-data" class="level5">
+<h5 class="anchored" data-anchor-id="load-data">Load data</h5>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb2"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>  <span class="co">#load data:</span></span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>  <span class="co">#new weed ID data (xlsx)</span></span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>  weed_id_tax <span class="ot">&lt;-</span> <span class="fu">read_excel</span>(<span class="st">"../data/SSWEEP_data_with_tax_and_indices_02_2026.xlsx"</span>, <span class="at">sheet =</span> <span class="st">"SSWEEP"</span>)</span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a>  <span class="co">#indices:</span></span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a>  weed_idx <span class="ot">&lt;-</span> <span class="fu">read_excel</span>(<span class="st">"../data/SSWEEP_data_with_tax_and_indices_02_2026.xlsx"</span>, <span class="at">sheet =</span> <span class="st">"Calculations for each grid"</span>)</span>
+<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-7"><a href="#cb2-7" aria-hidden="true" tabindex="-1"></a>  <span class="co">#Weed ID data (xlsx):</span></span>
+<span id="cb2-8"><a href="#cb2-8" aria-hidden="true" tabindex="-1"></a>  weed_id <span class="ot">&lt;-</span> <span class="fu">read_csv</span>(<span class="st">"../data/SSWEEP_weed_id_count_data.csv"</span>)</span>
+<span id="cb2-9"><a href="#cb2-9" aria-hidden="true" tabindex="-1"></a>    <span class="co">#keep Total sheet but discard other sheets:</span></span>
+<span id="cb2-10"><a href="#cb2-10" aria-hidden="true" tabindex="-1"></a>    </span>
+<span id="cb2-11"><a href="#cb2-11" aria-hidden="true" tabindex="-1"></a>  <span class="co">#surface sampling (15cm) (.csv):</span></span>
+<span id="cb2-12"><a href="#cb2-12" aria-hidden="true" tabindex="-1"></a>  surface_sampling <span class="ot">&lt;-</span> <span class="fu">read_csv</span>(<span class="st">"../data/SSWEEP_surface_SP_samples.csv"</span>)</span>
+<span id="cb2-13"><a href="#cb2-13" aria-hidden="true" tabindex="-1"></a>  </span>
+<span id="cb2-14"><a href="#cb2-14" aria-hidden="true" tabindex="-1"></a>  <span class="co">#full profile samples:</span></span>
+<span id="cb2-15"><a href="#cb2-15" aria-hidden="true" tabindex="-1"></a>  <span class="co"># full_profile &lt;- read_csv("../data/SSWEEP_full_profile_samples.csv")</span></span>
+<span id="cb2-16"><a href="#cb2-16" aria-hidden="true" tabindex="-1"></a>    <span class="co">#covariate stack (.tfs):</span></span>
+<span id="cb2-17"><a href="#cb2-17" aria-hidden="true" tabindex="-1"></a>     <span class="co"># cov_stack &lt;- rast("../data/covariate_stack_3m.tif")</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+</section>
+<section id="data-wrangling-join-weed-id-data-to-surface-sampling-points" class="level5">
+<h5 class="anchored" data-anchor-id="data-wrangling-join-weed-id-data-to-surface-sampling-points">Data wrangling: join weed ID data to surface sampling points</h5>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb3"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="co">#clean weed_id_tax:</span></span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a>weed_id_tax <span class="ot">&lt;-</span> weed_id_tax <span class="sc">%&gt;%</span></span>
+<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a>  <span class="fu">select</span>(<span class="dv">1</span><span class="sc">:</span><span class="dv">143</span>) <span class="sc">%&gt;%</span></span>
+<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a>  <span class="co">#select rows 1:72:</span></span>
+<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a>  <span class="fu">slice</span>(<span class="dv">1</span><span class="sc">:</span><span class="dv">72</span>)</span>
+<span id="cb3-6"><a href="#cb3-6" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-7"><a href="#cb3-7" aria-hidden="true" tabindex="-1"></a><span class="co">#weed id columns are rows under surface sampling row_num column:</span></span>
+<span id="cb3-8"><a href="#cb3-8" aria-hidden="true" tabindex="-1"></a><span class="co">#pivot all columns of weed id:</span></span>
+<span id="cb3-9"><a href="#cb3-9" aria-hidden="true" tabindex="-1"></a>weed_id_long <span class="ot">&lt;-</span> weed_id_tax <span class="sc">%&gt;%</span></span>
+<span id="cb3-10"><a href="#cb3-10" aria-hidden="true" tabindex="-1"></a>  <span class="fu">pivot_longer</span>( <span class="at">cols =</span> <span class="sc">-</span><span class="fu">c</span>(<span class="st">"Common Name"</span>,<span class="st">"Genus"</span>,<span class="st">"Species"</span>,<span class="st">"Family"</span>,<span class="st">"Life Cycle"</span>,<span class="st">"Season"</span>,<span class="st">"Type"</span>),</span>
+<span id="cb3-11"><a href="#cb3-11" aria-hidden="true" tabindex="-1"></a>               <span class="at">names_to =</span> <span class="st">"row_num"</span>, </span>
+<span id="cb3-12"><a href="#cb3-12" aria-hidden="true" tabindex="-1"></a>               <span class="at">values_to =</span> <span class="st">"weed_count"</span>) <span class="sc">%&gt;%</span></span>
+<span id="cb3-13"><a href="#cb3-13" aria-hidden="true" tabindex="-1"></a>  <span class="co">#rename ...1 to weed_species </span></span>
+<span id="cb3-14"><a href="#cb3-14" aria-hidden="true" tabindex="-1"></a>  <span class="fu">rename</span>(<span class="at">weed_species =</span> <span class="st">"Common Name"</span>)</span>
+<span id="cb3-15"><a href="#cb3-15" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-16"><a href="#cb3-16" aria-hidden="true" tabindex="-1"></a><span class="co">#join row_num </span></span>
+<span id="cb3-17"><a href="#cb3-17" aria-hidden="true" tabindex="-1"></a>surface_sampling_weed <span class="ot">&lt;-</span> surface_sampling <span class="sc">%&gt;%</span></span>
+<span id="cb3-18"><a href="#cb3-18" aria-hidden="true" tabindex="-1"></a>  <span class="fu">left_join</span>(weed_id_long, <span class="at">by =</span> <span class="st">"row_num"</span>) <span class="sc">%&gt;%</span></span>
+<span id="cb3-19"><a href="#cb3-19" aria-hidden="true" tabindex="-1"></a>  <span class="fu">clean_names</span>()</span>
+<span id="cb3-20"><a href="#cb3-20" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-21"><a href="#cb3-21" aria-hidden="true" tabindex="-1"></a><span class="fu">head</span>(surface_sampling_weed)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code># A tibble: 6 × 21
+  pedology_lab_id row_num     x     y   lbc lbc_eq p_h_2    ca     k    mg    mn
+            &lt;dbl&gt; &lt;chr&gt;   &lt;dbl&gt; &lt;dbl&gt; &lt;dbl&gt;  &lt;dbl&gt; &lt;dbl&gt; &lt;dbl&gt; &lt;dbl&gt; &lt;dbl&gt; &lt;dbl&gt;
+1          240400 1A      -83.7  32.4   189    506  6.55   661  64.3  74.8  17.5
+2          240400 1A      -83.7  32.4   189    506  6.55   661  64.3  74.8  17.5
+3          240400 1A      -83.7  32.4   189    506  6.55   661  64.3  74.8  17.5
+4          240400 1A      -83.7  32.4   189    506  6.55   661  64.3  74.8  17.5
+5          240400 1A      -83.7  32.4   189    506  6.55   661  64.3  74.8  17.5
+6          240400 1A      -83.7  32.4   189    506  6.55   661  64.3  74.8  17.5
+# ℹ 10 more variables: p &lt;dbl&gt;, zn &lt;dbl&gt;, weed_species &lt;chr&gt;, genus &lt;chr&gt;,
+#   species &lt;chr&gt;, family &lt;chr&gt;, life_cycle &lt;chr&gt;, season &lt;chr&gt;, type &lt;chr&gt;,
+#   weed_count &lt;chr&gt;</code></pre>
+</div>
+</div>
+</section>
+<section id="map-of-dominant-weed-family-dominance-share-family-abundance-total-abundance-at-each-surface-sampling-point" class="level3">
+<h3 class="anchored" data-anchor-id="map-of-dominant-weed-family-dominance-share-family-abundance-total-abundance-at-each-surface-sampling-point">Map of dominant weed family + dominance share (family abundance / total abundance) at each surface sampling point</h3>
+<section id="with-circle-size-scaled-by-total-abundance-and-fill-opacity-scaled-by-dominance-share.-use-an-imagery-basemap-and-a-color-palette-for-families.-include-legends-for-both-size-and-opacity." class="level6">
+<h6 class="anchored" data-anchor-id="with-circle-size-scaled-by-total-abundance-and-fill-opacity-scaled-by-dominance-share.-use-an-imagery-basemap-and-a-color-palette-for-families.-include-legends-for-both-size-and-opacity.">With circle size scaled by total abundance and fill opacity scaled by dominance share. Use an imagery basemap and a color palette for families. Include legends for both size and opacity.</h6>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb5"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="co"># ---- 1) dominant family + dominance share ----</span></span>
+<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a>weed_point_family <span class="ot">&lt;-</span> surface_sampling_weed <span class="sc">%&gt;%</span></span>
+<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a>  <span class="fu">mutate</span>(</span>
+<span id="cb5-4"><a href="#cb5-4" aria-hidden="true" tabindex="-1"></a>    <span class="at">weed_count =</span> <span class="fu">as.numeric</span>(weed_count),</span>
+<span id="cb5-5"><a href="#cb5-5" aria-hidden="true" tabindex="-1"></a>    <span class="at">family =</span> <span class="fu">str_squish</span>(family)</span>
+<span id="cb5-6"><a href="#cb5-6" aria-hidden="true" tabindex="-1"></a>  ) <span class="sc">%&gt;%</span></span>
+<span id="cb5-7"><a href="#cb5-7" aria-hidden="true" tabindex="-1"></a>  <span class="fu">filter</span>(<span class="sc">!</span><span class="fu">is.na</span>(weed_count)) <span class="sc">%&gt;%</span></span>
+<span id="cb5-8"><a href="#cb5-8" aria-hidden="true" tabindex="-1"></a>  <span class="fu">group_by</span>(row_num) <span class="sc">%&gt;%</span></span>
+<span id="cb5-9"><a href="#cb5-9" aria-hidden="true" tabindex="-1"></a>  <span class="fu">mutate</span>(<span class="at">total_abundance =</span> <span class="fu">sum</span>(weed_count, <span class="at">na.rm =</span> <span class="cn">TRUE</span>)) <span class="sc">%&gt;%</span></span>
+<span id="cb5-10"><a href="#cb5-10" aria-hidden="true" tabindex="-1"></a>  <span class="fu">ungroup</span>() <span class="sc">%&gt;%</span></span>
+<span id="cb5-11"><a href="#cb5-11" aria-hidden="true" tabindex="-1"></a>  <span class="fu">group_by</span>(row_num, family) <span class="sc">%&gt;%</span></span>
+<span id="cb5-12"><a href="#cb5-12" aria-hidden="true" tabindex="-1"></a>  <span class="fu">summarise</span>(</span>
+<span id="cb5-13"><a href="#cb5-13" aria-hidden="true" tabindex="-1"></a>    <span class="at">x =</span> <span class="fu">first</span>(x),</span>
+<span id="cb5-14"><a href="#cb5-14" aria-hidden="true" tabindex="-1"></a>    <span class="at">y =</span> <span class="fu">first</span>(y),</span>
+<span id="cb5-15"><a href="#cb5-15" aria-hidden="true" tabindex="-1"></a>    <span class="at">total_abundance =</span> <span class="fu">first</span>(total_abundance),</span>
+<span id="cb5-16"><a href="#cb5-16" aria-hidden="true" tabindex="-1"></a>    <span class="at">family_abundance =</span> <span class="fu">sum</span>(weed_count, <span class="at">na.rm =</span> <span class="cn">TRUE</span>),</span>
+<span id="cb5-17"><a href="#cb5-17" aria-hidden="true" tabindex="-1"></a>    <span class="at">.groups =</span> <span class="st">"drop"</span></span>
+<span id="cb5-18"><a href="#cb5-18" aria-hidden="true" tabindex="-1"></a>  ) <span class="sc">%&gt;%</span></span>
+<span id="cb5-19"><a href="#cb5-19" aria-hidden="true" tabindex="-1"></a>  <span class="fu">group_by</span>(row_num) <span class="sc">%&gt;%</span></span>
+<span id="cb5-20"><a href="#cb5-20" aria-hidden="true" tabindex="-1"></a>  <span class="fu">slice_max</span>(<span class="at">order_by =</span> family_abundance, <span class="at">n =</span> <span class="dv">1</span>, <span class="at">with_ties =</span> <span class="cn">FALSE</span>) <span class="sc">%&gt;%</span></span>
+<span id="cb5-21"><a href="#cb5-21" aria-hidden="true" tabindex="-1"></a>  <span class="fu">mutate</span>(<span class="at">dominance =</span> family_abundance <span class="sc">/</span> <span class="fu">pmax</span>(total_abundance, <span class="dv">1</span>)) <span class="sc">%&gt;%</span></span>
+<span id="cb5-22"><a href="#cb5-22" aria-hidden="true" tabindex="-1"></a>  <span class="fu">ungroup</span>()</span>
+<span id="cb5-23"><a href="#cb5-23" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-24"><a href="#cb5-24" aria-hidden="true" tabindex="-1"></a>weed_sf <span class="ot">&lt;-</span> <span class="fu">st_as_sf</span>(weed_point_family, <span class="at">coords =</span> <span class="fu">c</span>(<span class="st">"x"</span>,<span class="st">"y"</span>), <span class="at">crs =</span> <span class="dv">4326</span>)</span>
+<span id="cb5-25"><a href="#cb5-25" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-26"><a href="#cb5-26" aria-hidden="true" tabindex="-1"></a><span class="co"># ---- 2) palettes + scaling ----</span></span>
+<span id="cb5-27"><a href="#cb5-27" aria-hidden="true" tabindex="-1"></a>fam_levels <span class="ot">&lt;-</span> <span class="fu">sort</span>(<span class="fu">unique</span>(weed_sf<span class="sc">$</span>family))</span>
+<span id="cb5-28"><a href="#cb5-28" aria-hidden="true" tabindex="-1"></a>pal <span class="ot">&lt;-</span> <span class="fu">colorFactor</span>(<span class="at">palette =</span> <span class="st">"Dark2"</span>, <span class="at">domain =</span> fam_levels)   <span class="co"># or "Dark2", "Paired", etc.</span></span>
+<span id="cb5-29"><a href="#cb5-29" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-30"><a href="#cb5-30" aria-hidden="true" tabindex="-1"></a><span class="co"># radius from total abundance (cap so one crazy point doesn't take over)</span></span>
+<span id="cb5-31"><a href="#cb5-31" aria-hidden="true" tabindex="-1"></a>rad <span class="ot">&lt;-</span> <span class="fu">rescale</span>(weed_sf<span class="sc">$</span>total_abundance,</span>
+<span id="cb5-32"><a href="#cb5-32" aria-hidden="true" tabindex="-1"></a>               <span class="at">to =</span> <span class="fu">c</span>(<span class="dv">4</span>, <span class="dv">18</span>),</span>
+<span id="cb5-33"><a href="#cb5-33" aria-hidden="true" tabindex="-1"></a>               <span class="at">from =</span> <span class="fu">c</span>(<span class="fu">min</span>(weed_sf<span class="sc">$</span>total_abundance, <span class="at">na.rm=</span><span class="cn">TRUE</span>),</span>
+<span id="cb5-34"><a href="#cb5-34" aria-hidden="true" tabindex="-1"></a>                        <span class="fu">quantile</span>(weed_sf<span class="sc">$</span>total_abundance, <span class="fl">0.95</span>, <span class="at">na.rm=</span><span class="cn">TRUE</span>)))</span>
+<span id="cb5-35"><a href="#cb5-35" aria-hidden="true" tabindex="-1"></a>rad <span class="ot">&lt;-</span> <span class="fu">pmax</span>(<span class="dv">4</span>, rad)</span>
+<span id="cb5-36"><a href="#cb5-36" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-37"><a href="#cb5-37" aria-hidden="true" tabindex="-1"></a><span class="co"># alpha from dominance (keep visible even if low)</span></span>
+<span id="cb5-38"><a href="#cb5-38" aria-hidden="true" tabindex="-1"></a>alpha_fill <span class="ot">&lt;-</span> <span class="fu">pmax</span>(<span class="fl">0.25</span>, <span class="fu">pmin</span>(<span class="dv">1</span>, weed_sf<span class="sc">$</span>dominance))</span>
+<span id="cb5-39"><a href="#cb5-39" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-40"><a href="#cb5-40" aria-hidden="true" tabindex="-1"></a><span class="co"># popup text</span></span>
+<span id="cb5-41"><a href="#cb5-41" aria-hidden="true" tabindex="-1"></a>popup_txt <span class="ot">&lt;-</span> <span class="fu">paste0</span>(</span>
+<span id="cb5-42"><a href="#cb5-42" aria-hidden="true" tabindex="-1"></a>  <span class="st">"&lt;b&gt;Grid:&lt;/b&gt; "</span>, weed_sf<span class="sc">$</span>row_num,</span>
+<span id="cb5-43"><a href="#cb5-43" aria-hidden="true" tabindex="-1"></a>  <span class="st">"&lt;br&gt;&lt;b&gt;Dominant family:&lt;/b&gt; "</span>, weed_sf<span class="sc">$</span>family,</span>
+<span id="cb5-44"><a href="#cb5-44" aria-hidden="true" tabindex="-1"></a>  <span class="st">"&lt;br&gt;&lt;b&gt;Total abundance:&lt;/b&gt; "</span>, weed_sf<span class="sc">$</span>total_abundance,</span>
+<span id="cb5-45"><a href="#cb5-45" aria-hidden="true" tabindex="-1"></a>  <span class="st">"&lt;br&gt;&lt;b&gt;Family abundance:&lt;/b&gt; "</span>, weed_sf<span class="sc">$</span>family_abundance,</span>
+<span id="cb5-46"><a href="#cb5-46" aria-hidden="true" tabindex="-1"></a>  <span class="st">"&lt;br&gt;&lt;b&gt;Dominance share:&lt;/b&gt; "</span>, <span class="fu">round</span>(weed_sf<span class="sc">$</span>dominance, <span class="dv">2</span>)</span>
+<span id="cb5-47"><a href="#cb5-47" aria-hidden="true" tabindex="-1"></a>)</span>
+<span id="cb5-48"><a href="#cb5-48" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-49"><a href="#cb5-49" aria-hidden="true" tabindex="-1"></a><span class="co"># ---- 3) leaflet map with imagery basemap ----</span></span>
+<span id="cb5-50"><a href="#cb5-50" aria-hidden="true" tabindex="-1"></a><span class="co"># build an "alpha legend" as HTML</span></span>
+<span id="cb5-51"><a href="#cb5-51" aria-hidden="true" tabindex="-1"></a>alpha_vals <span class="ot">&lt;-</span> <span class="fu">round</span>(<span class="fu">seq</span>(<span class="fu">max</span>(<span class="fl">0.25</span>, <span class="fu">min</span>(weed_sf<span class="sc">$</span>dominance, <span class="at">na.rm=</span><span class="cn">TRUE</span>)),</span>
+<span id="cb5-52"><a href="#cb5-52" aria-hidden="true" tabindex="-1"></a>                        <span class="fu">max</span>(weed_sf<span class="sc">$</span>dominance, <span class="at">na.rm=</span><span class="cn">TRUE</span>),</span>
+<span id="cb5-53"><a href="#cb5-53" aria-hidden="true" tabindex="-1"></a>                        <span class="at">length.out =</span> <span class="dv">4</span>), <span class="dv">2</span>)</span>
+<span id="cb5-54"><a href="#cb5-54" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-55"><a href="#cb5-55" aria-hidden="true" tabindex="-1"></a>alpha_legend <span class="ot">&lt;-</span> tags<span class="sc">$</span><span class="fu">div</span>(</span>
+<span id="cb5-56"><a href="#cb5-56" aria-hidden="true" tabindex="-1"></a>  <span class="at">style =</span> <span class="st">"</span></span>
+<span id="cb5-57"><a href="#cb5-57" aria-hidden="true" tabindex="-1"></a><span class="st">    background: rgba(255,255,255,0.9);</span></span>
+<span id="cb5-58"><a href="#cb5-58" aria-hidden="true" tabindex="-1"></a><span class="st">    padding: 8px 10px;</span></span>
+<span id="cb5-59"><a href="#cb5-59" aria-hidden="true" tabindex="-1"></a><span class="st">    border-radius: 6px;</span></span>
+<span id="cb5-60"><a href="#cb5-60" aria-hidden="true" tabindex="-1"></a><span class="st">    box-shadow: 0 1px 4px rgba(0,0,0,0.3);</span></span>
+<span id="cb5-61"><a href="#cb5-61" aria-hidden="true" tabindex="-1"></a><span class="st">    font-size: 12px;</span></span>
+<span id="cb5-62"><a href="#cb5-62" aria-hidden="true" tabindex="-1"></a><span class="st">    line-height: 16px;</span></span>
+<span id="cb5-63"><a href="#cb5-63" aria-hidden="true" tabindex="-1"></a><span class="st">  "</span>,</span>
+<span id="cb5-64"><a href="#cb5-64" aria-hidden="true" tabindex="-1"></a>  tags<span class="sc">$</span><span class="fu">div</span>(tags<span class="sc">$</span><span class="fu">b</span>(<span class="st">"Dominance (fill opacity)"</span>)),</span>
+<span id="cb5-65"><a href="#cb5-65" aria-hidden="true" tabindex="-1"></a>  tags<span class="sc">$</span><span class="fu">div</span>(<span class="at">style=</span><span class="st">"margin-top:6px;"</span>,</span>
+<span id="cb5-66"><a href="#cb5-66" aria-hidden="true" tabindex="-1"></a>    <span class="fu">lapply</span>(alpha_vals, <span class="cf">function</span>(a){</span>
+<span id="cb5-67"><a href="#cb5-67" aria-hidden="true" tabindex="-1"></a>      tags<span class="sc">$</span><span class="fu">div</span>(<span class="at">style=</span><span class="st">"display:flex; align-items:center; margin-bottom:4px;"</span>,</span>
+<span id="cb5-68"><a href="#cb5-68" aria-hidden="true" tabindex="-1"></a>        <span class="co"># a little circle swatch with different alpha</span></span>
+<span id="cb5-69"><a href="#cb5-69" aria-hidden="true" tabindex="-1"></a>        tags<span class="sc">$</span><span class="fu">span</span>(<span class="at">style =</span> <span class="fu">sprintf</span>(</span>
+<span id="cb5-70"><a href="#cb5-70" aria-hidden="true" tabindex="-1"></a>          <span class="st">"display:inline-block; width:12px; height:12px; border-radius:50%%;</span></span>
+<span id="cb5-71"><a href="#cb5-71" aria-hidden="true" tabindex="-1"></a><span class="st">           background: rgba(0,0,0,%.2f); border:1px solid #555; margin-right:8px;"</span>,</span>
+<span id="cb5-72"><a href="#cb5-72" aria-hidden="true" tabindex="-1"></a>          a</span>
+<span id="cb5-73"><a href="#cb5-73" aria-hidden="true" tabindex="-1"></a>        )),</span>
+<span id="cb5-74"><a href="#cb5-74" aria-hidden="true" tabindex="-1"></a>        tags<span class="sc">$</span><span class="fu">span</span>(<span class="fu">sprintf</span>(<span class="st">"%.2f"</span>, a))</span>
+<span id="cb5-75"><a href="#cb5-75" aria-hidden="true" tabindex="-1"></a>      )</span>
+<span id="cb5-76"><a href="#cb5-76" aria-hidden="true" tabindex="-1"></a>    })</span>
+<span id="cb5-77"><a href="#cb5-77" aria-hidden="true" tabindex="-1"></a>  ),</span>
+<span id="cb5-78"><a href="#cb5-78" aria-hidden="true" tabindex="-1"></a>  tags<span class="sc">$</span><span class="fu">div</span>(<span class="at">style=</span><span class="st">"margin-top:6px; color:#444;"</span>,</span>
+<span id="cb5-79"><a href="#cb5-79" aria-hidden="true" tabindex="-1"></a>           <span class="st">"More opaque = stronger dominance"</span>)</span>
+<span id="cb5-80"><a href="#cb5-80" aria-hidden="true" tabindex="-1"></a>)</span>
+<span id="cb5-81"><a href="#cb5-81" aria-hidden="true" tabindex="-1"></a><span class="co"># ---- SIZE LEGEND (abundance -&gt; circle radius) ----</span></span>
+<span id="cb5-82"><a href="#cb5-82" aria-hidden="true" tabindex="-1"></a><span class="co"># pick 4 representative abundance values (min, median, 75th, 95th-ish)</span></span>
+<span id="cb5-83"><a href="#cb5-83" aria-hidden="true" tabindex="-1"></a>ab_vals <span class="ot">&lt;-</span> <span class="fu">c</span>(</span>
+<span id="cb5-84"><a href="#cb5-84" aria-hidden="true" tabindex="-1"></a>  <span class="fu">min</span>(weed_sf<span class="sc">$</span>total_abundance, <span class="at">na.rm =</span> <span class="cn">TRUE</span>),</span>
+<span id="cb5-85"><a href="#cb5-85" aria-hidden="true" tabindex="-1"></a>  <span class="fu">median</span>(weed_sf<span class="sc">$</span>total_abundance, <span class="at">na.rm =</span> <span class="cn">TRUE</span>),</span>
+<span id="cb5-86"><a href="#cb5-86" aria-hidden="true" tabindex="-1"></a>  <span class="fu">quantile</span>(weed_sf<span class="sc">$</span>total_abundance, <span class="fl">0.75</span>, <span class="at">na.rm =</span> <span class="cn">TRUE</span>),</span>
+<span id="cb5-87"><a href="#cb5-87" aria-hidden="true" tabindex="-1"></a>  <span class="fu">quantile</span>(weed_sf<span class="sc">$</span>total_abundance, <span class="fl">0.95</span>, <span class="at">na.rm =</span> <span class="cn">TRUE</span>)</span>
+<span id="cb5-88"><a href="#cb5-88" aria-hidden="true" tabindex="-1"></a>) <span class="sc">%&gt;%</span> <span class="fu">as.numeric</span>() <span class="sc">%&gt;%</span> <span class="fu">unique</span>() <span class="sc">%&gt;%</span> <span class="fu">sort</span>()</span>
+<span id="cb5-89"><a href="#cb5-89" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-90"><a href="#cb5-90" aria-hidden="true" tabindex="-1"></a><span class="co"># convert those abundance values to radii using the SAME mapping you used for points</span></span>
+<span id="cb5-91"><a href="#cb5-91" aria-hidden="true" tabindex="-1"></a>rad_fun <span class="ot">&lt;-</span> <span class="cf">function</span>(x) {</span>
+<span id="cb5-92"><a href="#cb5-92" aria-hidden="true" tabindex="-1"></a>  <span class="fu">rescale</span>(x, <span class="at">to =</span> <span class="fu">c</span>(<span class="dv">4</span>, <span class="dv">18</span>),</span>
+<span id="cb5-93"><a href="#cb5-93" aria-hidden="true" tabindex="-1"></a>          <span class="at">from =</span> <span class="fu">c</span>(<span class="fu">min</span>(weed_sf<span class="sc">$</span>total_abundance, <span class="at">na.rm=</span><span class="cn">TRUE</span>),</span>
+<span id="cb5-94"><a href="#cb5-94" aria-hidden="true" tabindex="-1"></a>                   <span class="fu">quantile</span>(weed_sf<span class="sc">$</span>total_abundance, <span class="fl">0.95</span>, <span class="at">na.rm=</span><span class="cn">TRUE</span>))) <span class="sc">%&gt;%</span></span>
+<span id="cb5-95"><a href="#cb5-95" aria-hidden="true" tabindex="-1"></a>    <span class="fu">pmax</span>(<span class="dv">4</span>) <span class="sc">%&gt;%</span> <span class="fu">pmin</span>(<span class="dv">18</span>)</span>
+<span id="cb5-96"><a href="#cb5-96" aria-hidden="true" tabindex="-1"></a>}</span>
+<span id="cb5-97"><a href="#cb5-97" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-98"><a href="#cb5-98" aria-hidden="true" tabindex="-1"></a>rad_vals <span class="ot">&lt;-</span> <span class="fu">rad_fun</span>(ab_vals)</span>
+<span id="cb5-99"><a href="#cb5-99" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-100"><a href="#cb5-100" aria-hidden="true" tabindex="-1"></a>size_legend <span class="ot">&lt;-</span> tags<span class="sc">$</span><span class="fu">div</span>(</span>
+<span id="cb5-101"><a href="#cb5-101" aria-hidden="true" tabindex="-1"></a>  <span class="at">style =</span> <span class="st">"</span></span>
+<span id="cb5-102"><a href="#cb5-102" aria-hidden="true" tabindex="-1"></a><span class="st">    background: rgba(255,255,255,0.9);</span></span>
+<span id="cb5-103"><a href="#cb5-103" aria-hidden="true" tabindex="-1"></a><span class="st">    padding: 8px 10px;</span></span>
+<span id="cb5-104"><a href="#cb5-104" aria-hidden="true" tabindex="-1"></a><span class="st">    border-radius: 6px;</span></span>
+<span id="cb5-105"><a href="#cb5-105" aria-hidden="true" tabindex="-1"></a><span class="st">    box-shadow: 0 1px 4px rgba(0,0,0,0.3);</span></span>
+<span id="cb5-106"><a href="#cb5-106" aria-hidden="true" tabindex="-1"></a><span class="st">    font-size: 12px;</span></span>
+<span id="cb5-107"><a href="#cb5-107" aria-hidden="true" tabindex="-1"></a><span class="st">    line-height: 16px;</span></span>
+<span id="cb5-108"><a href="#cb5-108" aria-hidden="true" tabindex="-1"></a><span class="st">  "</span>,</span>
+<span id="cb5-109"><a href="#cb5-109" aria-hidden="true" tabindex="-1"></a>  tags<span class="sc">$</span><span class="fu">div</span>(tags<span class="sc">$</span><span class="fu">b</span>(<span class="st">"Total abundance (size)"</span>)),</span>
+<span id="cb5-110"><a href="#cb5-110" aria-hidden="true" tabindex="-1"></a>  tags<span class="sc">$</span><span class="fu">div</span>(<span class="at">style=</span><span class="st">"margin-top:6px;"</span>,</span>
+<span id="cb5-111"><a href="#cb5-111" aria-hidden="true" tabindex="-1"></a>    <span class="fu">lapply</span>(<span class="fu">seq_along</span>(ab_vals), <span class="cf">function</span>(i){</span>
+<span id="cb5-112"><a href="#cb5-112" aria-hidden="true" tabindex="-1"></a>      r <span class="ot">&lt;-</span> rad_vals[i]</span>
+<span id="cb5-113"><a href="#cb5-113" aria-hidden="true" tabindex="-1"></a>      tags<span class="sc">$</span><span class="fu">div</span>(<span class="at">style=</span><span class="st">"display:flex; align-items:center; margin-bottom:6px;"</span>,</span>
+<span id="cb5-114"><a href="#cb5-114" aria-hidden="true" tabindex="-1"></a>        <span class="co"># circle swatch sized by radius (diameter = 2r)</span></span>
+<span id="cb5-115"><a href="#cb5-115" aria-hidden="true" tabindex="-1"></a>        tags<span class="sc">$</span><span class="fu">span</span>(<span class="at">style =</span> <span class="fu">sprintf</span>(</span>
+<span id="cb5-116"><a href="#cb5-116" aria-hidden="true" tabindex="-1"></a>          <span class="st">"display:inline-block; width:%dpx; height:%dpx; border-radius:50%%;</span></span>
+<span id="cb5-117"><a href="#cb5-117" aria-hidden="true" tabindex="-1"></a><span class="st">           background: rgba(0,0,0,0.25); border:1px solid #555; margin-right:10px;"</span>,</span>
+<span id="cb5-118"><a href="#cb5-118" aria-hidden="true" tabindex="-1"></a>          <span class="fu">round</span>(<span class="dv">2</span><span class="sc">*</span>r), <span class="fu">round</span>(<span class="dv">2</span><span class="sc">*</span>r)</span>
+<span id="cb5-119"><a href="#cb5-119" aria-hidden="true" tabindex="-1"></a>        )),</span>
+<span id="cb5-120"><a href="#cb5-120" aria-hidden="true" tabindex="-1"></a>        tags<span class="sc">$</span><span class="fu">span</span>(<span class="fu">format</span>(<span class="fu">round</span>(ab_vals[i], <span class="dv">1</span>), <span class="at">trim =</span> <span class="cn">TRUE</span>))</span>
+<span id="cb5-121"><a href="#cb5-121" aria-hidden="true" tabindex="-1"></a>      )</span>
+<span id="cb5-122"><a href="#cb5-122" aria-hidden="true" tabindex="-1"></a>    })</span>
+<span id="cb5-123"><a href="#cb5-123" aria-hidden="true" tabindex="-1"></a>  )</span>
+<span id="cb5-124"><a href="#cb5-124" aria-hidden="true" tabindex="-1"></a>)</span>
+<span id="cb5-125"><a href="#cb5-125" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-126"><a href="#cb5-126" aria-hidden="true" tabindex="-1"></a><span class="fu">leaflet</span>(weed_sf) <span class="sc">%&gt;%</span></span>
+<span id="cb5-127"><a href="#cb5-127" aria-hidden="true" tabindex="-1"></a>  <span class="fu">addProviderTiles</span>(providers<span class="sc">$</span>Esri.WorldImagery, <span class="at">group =</span> <span class="st">"Imagery"</span>) <span class="sc">%&gt;%</span></span>
+<span id="cb5-128"><a href="#cb5-128" aria-hidden="true" tabindex="-1"></a>  <span class="fu">addProviderTiles</span>(providers<span class="sc">$</span>CartoDB.Positron, <span class="at">group =</span> <span class="st">"Light"</span>) <span class="sc">%&gt;%</span></span>
+<span id="cb5-129"><a href="#cb5-129" aria-hidden="true" tabindex="-1"></a>  <span class="fu">addLayersControl</span>(<span class="at">baseGroups =</span> <span class="fu">c</span>(<span class="st">"Imagery"</span>, <span class="st">"Light"</span>),</span>
+<span id="cb5-130"><a href="#cb5-130" aria-hidden="true" tabindex="-1"></a>                   <span class="at">options =</span> <span class="fu">layersControlOptions</span>(<span class="at">collapsed =</span> <span class="cn">TRUE</span>)) <span class="sc">%&gt;%</span></span>
+<span id="cb5-131"><a href="#cb5-131" aria-hidden="true" tabindex="-1"></a>  <span class="fu">addCircleMarkers</span>(</span>
+<span id="cb5-132"><a href="#cb5-132" aria-hidden="true" tabindex="-1"></a>    <span class="at">radius =</span> rad,</span>
+<span id="cb5-133"><a href="#cb5-133" aria-hidden="true" tabindex="-1"></a>    <span class="at">color =</span> <span class="sc">~</span><span class="fu">pal</span>(family),</span>
+<span id="cb5-134"><a href="#cb5-134" aria-hidden="true" tabindex="-1"></a>    <span class="at">weight =</span> <span class="dv">2</span>,</span>
+<span id="cb5-135"><a href="#cb5-135" aria-hidden="true" tabindex="-1"></a>    <span class="at">opacity =</span> <span class="dv">1</span>,</span>
+<span id="cb5-136"><a href="#cb5-136" aria-hidden="true" tabindex="-1"></a>    <span class="at">fillColor =</span> <span class="sc">~</span><span class="fu">pal</span>(family),</span>
+<span id="cb5-137"><a href="#cb5-137" aria-hidden="true" tabindex="-1"></a>    <span class="at">fillOpacity =</span> alpha_fill,</span>
+<span id="cb5-138"><a href="#cb5-138" aria-hidden="true" tabindex="-1"></a>    <span class="at">popup =</span> popup_txt</span>
+<span id="cb5-139"><a href="#cb5-139" aria-hidden="true" tabindex="-1"></a>  ) <span class="sc">%&gt;%</span></span>
+<span id="cb5-140"><a href="#cb5-140" aria-hidden="true" tabindex="-1"></a>  <span class="fu">addLegend</span>(<span class="st">"bottomright"</span>,</span>
+<span id="cb5-141"><a href="#cb5-141" aria-hidden="true" tabindex="-1"></a>            <span class="at">pal =</span> pal,</span>
+<span id="cb5-142"><a href="#cb5-142" aria-hidden="true" tabindex="-1"></a>            <span class="at">values =</span> <span class="sc">~</span>family,</span>
+<span id="cb5-143"><a href="#cb5-143" aria-hidden="true" tabindex="-1"></a>            <span class="at">title =</span> <span class="st">"Dominant family"</span>,</span>
+<span id="cb5-144"><a href="#cb5-144" aria-hidden="true" tabindex="-1"></a>            <span class="at">opacity =</span> <span class="dv">1</span>) <span class="sc">%&gt;%</span></span>
+<span id="cb5-145"><a href="#cb5-145" aria-hidden="true" tabindex="-1"></a>  <span class="fu">addControl</span>(alpha_legend, <span class="at">position =</span> <span class="st">"bottomleft"</span>) <span class="sc">%&gt;%</span></span>
+<span id="cb5-146"><a href="#cb5-146" aria-hidden="true" tabindex="-1"></a>  <span class="fu">addControl</span>(size_legend, <span class="at">position =</span> <span class="st">"topleft"</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output-display">
+<div class="leaflet html-widget html-fill-item" id="htmlwidget-9e0cea826ff6149fdff1" style="width:100%;height:464px;"></div>
+<script type="application/json" data-for="htmlwidget-9e0cea826ff6149fdff1">{"x":{"options":{"crs":{"crsClass":"L.CRS.EPSG3857","code":null,"proj4def":null,"projectedBounds":null,"options":{}}},"calls":[{"method":"addProviderTiles","args":["Esri.WorldImagery",null,"Imagery",{"errorTileUrl":"","noWrap":false,"detectRetina":false}]},{"method":"addProviderTiles","args":["CartoDB.Positron",null,"Light",{"errorTileUrl":"","noWrap":false,"detectRetina":false}]},{"method":"addLayersControl","args":[["Imagery","Light"],[],{"collapsed":true,"autoZIndex":true,"position":"topright"}]},{"method":"addCircleMarkers","args":[[32.43223721,32.43223388,32.43223055,32.43222722,32.43222387,32.43222052,32.43221716,32.43221379,32.43221042,32.43144892,32.437933,32.43144564,32.43144236,32.43143908,32.43143578,32.43143248,32.43142917,32.43142586,32.43142253,32.4314192,32.43141586,32.43712838,32.43141252,32.43140917,32.43140581,32.43140244,32.43063429,32.43063101,32.43062772,32.43062443,32.43062113,32.43712511,32.43061782,32.4306145,32.43061118,32.43060785,32.43060451,32.43060117,32.43059998,32.43712183,32.43711854,32.43711524,32.43711194,32.43710863,32.43710532,32.43710199,32.43793973,32.43709866,32.43709532,32.43631703,32.43631376,32.436519,32.43630719,32.43630389,32.43630059,32.43629728,32.43629396,32.43793646,32.43629064,32.43628731,32.43628397,32.43628063,32.435572,32.4355024,32.43549912,32.43549584,32.43549254,32.43548924,32.43793318,32.43548593,32.43548261,32.43547929,32.43547596,32.43547262,32.43546927,32.43546592,32.43469433,32.43469105,32.43468777,32.43792989,32.43468449,32.43468119,32.43467789,32.43467458,32.43467126,32.43466794,32.43466461,32.43466127,32.43465792,32.43465457,32.4379266,32.43465121,32.43388297,32.4338797,32.43387642,32.43387313,32.43386984,32.43386654,32.43386323,32.43385991,32.43385659,32.43792329,32.43385326,32.43384992,32.43384657,32.43384322,32.43383986,32.43383649,32.43307162,32.43306835,32.43306507,32.43306178,32.43791998,32.43305849,32.43305519,32.43305188,32.43304856,32.43304524,32.43304191,32.43303857,32.43303522,32.43303187,32.43302851,32.43791667,32.43302514,32.43302177,32.432788,32.43226027,32.432257,32.43225372,32.43225043,32.43224713,32.43224383,32.43224052,32.437943],[-83.72953742,-83.72858073,-83.72762403,-83.72666734000001,-83.72571065,-83.72475394999999,-83.72379726,-83.72284057,-83.72188387,-83.73623814,-83.727553,-83.73528145,-83.73432477,-83.73336808000001,-83.73241139,-83.73145470999999,-83.73049802,-83.72954134,-83.72858465,-83.72762797,-83.72667128000001,-83.73621115,-83.7257146,-83.72475790999999,-83.72380123000001,-83.72284454,-83.73528532,-83.73432864,-83.73337196,-83.73241528,-83.73145861,-83.73525441,-83.73050193,-83.72954525,-83.72858857,-83.72763190000001,-83.72667522,-83.72571854,-83.72475966,-83.73429766,-83.73334092,-83.73238417,-83.73142742,-83.73047068,-83.72951393,-83.72855719,-83.7362073,-83.72760044,-83.7266437,-83.73621501,-83.73525827,-83.73431100000001,-83.7333448,-83.73238806000001,-83.73143132,-83.73047458000001,-83.72951784999999,-83.73525054,-83.72856111,-83.72760436999999,-83.72664764,-83.7256909,-83.73616,-83.73526214,-83.73430541,-83.73334868000001,-83.73239194999999,-83.73143521999999,-83.73429379,-83.73047849,-83.72952176,-83.72856503,-83.72760830999999,-83.72665158,-83.72569485,-83.72473812,-83.73622272,-83.735266,-83.73430928000001,-83.73333703,-83.73335256,-83.73239584,-83.73143912,-83.7304824,-83.72952567999999,-83.72856896,-83.72761224,-83.72665551999999,-83.7256988,-83.72474208,-83.73238028,-83.72378535999999,-83.73622657999999,-83.73526986,-83.73431315000001,-83.73335643999999,-83.73239973,-83.73144302,-83.7304863,-83.72952959,-83.72857288,-83.73142353,-83.72761617,-83.72665945999999,-83.72570275,-83.72474604,-83.72378933,-83.72283262000001,-83.73623043000001,-83.73527373,-83.73431702000001,-83.73336032,-83.73046677000001,-83.73240362,-83.73144691,-83.73049021,-83.72953351,-83.7285768,-83.7276201,-83.72666340000001,-83.7257067,-83.72475,-83.72379329,-83.72951002000001,-83.72283659,-83.72187989,-83.730062,-83.73623428000001,-83.73527759,-83.73432089000001,-83.7333642,-83.73240751,-83.73145081,-83.73049412,-83.728561],[18.83050847457626,8.983050847457623,7.796610169491522,6.254237288135592,16.33898305084745,11.94915254237288,14.20338983050847,6.254237288135592,7.322033898305081,5.898305084745761,5.898305084745761,8.033898305084742,10.28813559322033,7.677966101694912,11.23728813559321,21.08474576271185,7.203389830508471,13.84745762711863,15.38983050847456,12.3050847457627,7.322033898305081,7.440677966101692,4.47457627118644,6.135593220338981,7.440677966101692,5.305084745762711,17.64406779661016,6.966101694915251,17.05084745762711,6.254237288135592,9.457627118644062,8.745762711864401,4.949152542372881,25.94915254237286,9.220338983050842,15.50847457627118,14.79661016949152,6.016949152542371,9.694915254237282,7.559322033898302,5.542372881355931,5.542372881355931,6.966101694915251,4.71186440677966,10.40677966101694,8.033898305084742,9.576271186440673,5.542372881355931,6.016949152542371,8.983050847457623,7.084745762711862,6.254237288135592,5.42372881355932,4.949152542372881,8.033898305084742,8.627118644067792,6.728813559322031,6.254237288135592,5.305084745762711,6.491525423728811,7.322033898305081,4.35593220338983,6.610169491525421,6.966101694915251,6.728813559322031,5.305084745762711,6.254237288135592,5.898305084745761,10.28813559322033,6.610169491525421,13.61016949152541,10.99999999999999,11.59322033898304,6.135593220338981,12.06779661016948,6.254237288135592,7.440677966101692,7.322033898305081,6.254237288135592,11.83050847457626,7.203389830508471,7.084745762711862,4.830508474576271,6.966101694915251,5.661016949152541,4.23728813559322,4.830508474576271,5.42372881355932,26.54237288135591,11.23728813559321,6.254237288135592,13.37288135593219,8.271186440677962,6.847457627118641,19.18644067796609,12.18644067796609,8.983050847457623,8.271186440677962,9.813559322033893,7.677966101694912,19.18644067796609,6.491525423728811,5.1864406779661,13.25423728813558,9.813559322033893,7.322033898305081,7.440677966101692,4,10.28813559322033,8.152542372881353,6.135593220338981,13.37288135593219,5.661016949152541,10.76271186440677,28.55932203389828,5.542372881355931,10.40677966101694,9.813559322033893,11.23728813559321,7.677966101694912,5.1864406779661,6.847457627118641,4,6.372881355932201,5.77966101694915,7.084745762711862,8.864406779661014,5.06779661016949,6.491525423728811,13.01694915254236,9.338983050847453,13.25423728813558,9.338983050847453,14.91525423728812,9.101694915254232],null,null,{"interactive":true,"className":"","stroke":true,"color":["#AAAA14","#E6AB02","#AAAA14","#9D8545","#AAAA14","#9D8545","#1B9E77","#B66866","#9D8545","#1B9E77","#66A61E","#A6761D","#9D8545","#7570B3","#9D8545","#1B9E77","#E6AB02","#1B9E77","#7570B3","#7570B3","#A6761D","#896E46","#1B9E77","#1B9E77","#1B9E77","#66A61E","#1B9E77","#1B9E77","#7570B3","#1B9E77","#7570B3","#AAAA14","#B66866","#7570B3","#B66866","#1B9E77","#7570B3","#B66866","#1B9E77","#C69016","#B66866","#9D8545","#AAAA14","#AAAA14","#AAAA14","#666666","#B6599E","#AAAA14","#B66866","#1B9E77","#E6AB02","#AAAA14","#B66866","#AAAA14","#AAAA14","#AAAA14","#66A61E","#AAAA14","#66A61E","#B66866","#66A61E","#1B9E77","#A6761D","#A6761D","#1B9E77","#66A61E","#AAAA14","#66A61E","#B66866","#AAAA14","#B6599E","#B6599E","#1B9E77","#B66866","#B27D5D","#B6599E","#1B9E77","#AAAA14","#B66866","#AAAA14","#C69016","#9D8545","#9D8545","#1B9E77","#1B9E77","#AAAA14","#66A61E","#AAAA14","#AAAA14","#1B9E77","#B66866","#AAAA14","#E6AB02","#7570B3","#AAAA14","#AAAA14","#AAAA14","#1B9E77","#AAAA14","#AAAA14","#AAAA14","#B66866","#B6599E","#E7298A","#AAAA14","#1B9E77","#C69016","#D95F02","#1B9E77","#7570B3","#1B9E77","#C69016","#9D8545","#1B9E77","#7570B3","#AAAA14","#AAAA14","#AAAA14","#A6761D","#A6761D","#B66866","#B66866","#AAAA14","#1B9E77","#A6761D","#AAAA14","#AAAA14","#E6AB02","#A6761D","#A6761D","#AAAA14","#AAAA14","#C69016","#E6AB02","#1B9E77"],"weight":2,"opacity":1,"fill":true,"fillColor":["#AAAA14","#E6AB02","#AAAA14","#9D8545","#AAAA14","#9D8545","#1B9E77","#B66866","#9D8545","#1B9E77","#66A61E","#A6761D","#9D8545","#7570B3","#9D8545","#1B9E77","#E6AB02","#1B9E77","#7570B3","#7570B3","#A6761D","#896E46","#1B9E77","#1B9E77","#1B9E77","#66A61E","#1B9E77","#1B9E77","#7570B3","#1B9E77","#7570B3","#AAAA14","#B66866","#7570B3","#B66866","#1B9E77","#7570B3","#B66866","#1B9E77","#C69016","#B66866","#9D8545","#AAAA14","#AAAA14","#AAAA14","#666666","#B6599E","#AAAA14","#B66866","#1B9E77","#E6AB02","#AAAA14","#B66866","#AAAA14","#AAAA14","#AAAA14","#66A61E","#AAAA14","#66A61E","#B66866","#66A61E","#1B9E77","#A6761D","#A6761D","#1B9E77","#66A61E","#AAAA14","#66A61E","#B66866","#AAAA14","#B6599E","#B6599E","#1B9E77","#B66866","#B27D5D","#B6599E","#1B9E77","#AAAA14","#B66866","#AAAA14","#C69016","#9D8545","#9D8545","#1B9E77","#1B9E77","#AAAA14","#66A61E","#AAAA14","#AAAA14","#1B9E77","#B66866","#AAAA14","#E6AB02","#7570B3","#AAAA14","#AAAA14","#AAAA14","#1B9E77","#AAAA14","#AAAA14","#AAAA14","#B66866","#B6599E","#E7298A","#AAAA14","#1B9E77","#C69016","#D95F02","#1B9E77","#7570B3","#1B9E77","#C69016","#9D8545","#1B9E77","#7570B3","#AAAA14","#AAAA14","#AAAA14","#A6761D","#A6761D","#B66866","#B66866","#AAAA14","#1B9E77","#A6761D","#AAAA14","#AAAA14","#E6AB02","#A6761D","#A6761D","#AAAA14","#AAAA14","#C69016","#E6AB02","#1B9E77"],"fillOpacity":[0.7165354330708661,0.3636363636363636,0.7058823529411765,0.3333333333333333,0.8113207547169812,0.3478260869565217,0.2954545454545455,0.25,0.3666666666666666,0.3888888888888889,0.4444444444444444,0.4444444444444444,0.4,0.3939393939393939,0.4126984126984127,0.4520547945205479,0.4827586206896552,0.4235294117647059,0.4081632653061225,0.4722222222222222,0.4333333333333333,0.8709677419354839,0.5,0.4,0.2903225806451613,0.3846153846153846,0.4700854700854701,0.4444444444444444,0.8125,0.4285714285714285,0.4375,0.6428571428571429,0.7,0.9144385026737968,0.2826086956521739,0.4646464646464646,0.5483870967741935,0.2631578947368421,0.48,0.375,0.6,0.5333333333333333,0.4074074074074074,0.625,0.5357142857142857,0.4444444444444444,0.2857142857142857,0.3333333333333333,0.6842105263157895,0.25,0.2857142857142857,0.2857142857142857,0.5,0.5,0.2777777777777778,0.2682926829268293,0.36,0.3333333333333333,0.6153846153846154,0.4782608695652174,0.4333333333333333,0.4,0.5,0.3703703703703703,0.44,0.3846153846153846,0.4761904761904762,0.3888888888888889,0.3090909090909091,0.5416666666666666,0.6265060240963856,0.2622950819672131,0.25,0.25,0.5142857142857142,0.5238095238095238,0.2903225806451613,0.7666666666666667,0.3809523809523809,0.2794117647058824,0.4482758620689655,0.4285714285714285,0.4444444444444444,0.2962962962962963,0.25,0.5,0.3333333333333333,0.5714285714285714,0.7708333333333334,0.5714285714285714,0.4285714285714285,0.7160493827160493,0.4210526315789473,0.4615384615384616,0.3923076923076923,0.4507042253521127,0.2954545454545455,0.631578947368421,0.4313725490196079,0.2727272727272727,0.5692307692307692,0.4347826086956522,0.25,0.25,0.25,0.5333333333333333,0.4838709677419355,0.5,0.2909090909090909,0.4594594594594595,0.4,0.5555555555555556,0.5,0.6101694915254238,0.8229665071770335,0.3333333333333333,0.5892857142857143,0.5686274509803921,0.3174603174603174,0.3636363636363636,0.3333333333333333,0.25,0.5,0.25,0.4705882352941176,0.3214285714285715,0.2558139534883721,0.6363636363636364,0.6956521739130435,0.4487179487179487,0.4893617021276596,0.8375,0.3191489361702128,0.8085106382978723,0.5111111111111111]},null,null,["<b>Grid:<\/b> 100H<br><b>Dominant family:<\/b> Onagraceae<br><b>Total abundance:<\/b> 127<br><b>Family abundance:<\/b> 91<br><b>Dominance share:<\/b> 0.72","<b>Grid:<\/b> 101H<br><b>Dominant family:<\/b> Oxalidaceae<br><b>Total abundance:<\/b> 44<br><b>Family abundance:<\/b> 16<br><b>Dominance share:<\/b> 0.36","<b>Grid:<\/b> 102H<br><b>Dominant family:<\/b> Onagraceae<br><b>Total abundance:<\/b> 34<br><b>Family abundance:<\/b> 24<br><b>Dominance share:<\/b> 0.71","<b>Grid:<\/b> 103H<br><b>Dominant family:<\/b> Brassicaceae<br><b>Total abundance:<\/b> 21<br><b>Family abundance:<\/b> 7<br><b>Dominance share:<\/b> 0.33","<b>Grid:<\/b> 104H<br><b>Dominant family:<\/b> Onagraceae<br><b>Total abundance:<\/b> 106<br><b>Family abundance:<\/b> 86<br><b>Dominance share:<\/b> 0.81","<b>Grid:<\/b> 105H<br><b>Dominant family:<\/b> Brassicaceae<br><b>Total abundance:<\/b> 69<br><b>Family abundance:<\/b> 24<br><b>Dominance share:<\/b> 0.35","<b>Grid:<\/b> 106H<br><b>Dominant family:<\/b> Asteraceae<br><b>Total abundance:<\/b> 88<br><b>Family abundance:<\/b> 26<br><b>Dominance share:<\/b> 0.3","<b>Grid:<\/b> 107H<br><b>Dominant family:<\/b> Caryophyllaceae<br><b>Total abundance:<\/b> 21<br><b>Family abundance:<\/b> 5<br><b>Dominance share:<\/b> 0.24","<b>Grid:<\/b> 108H<br><b>Dominant family:<\/b> Brassicaceae<br><b>Total abundance:<\/b> 30<br><b>Family abundance:<\/b> 11<br><b>Dominance share:<\/b> 0.37","<b>Grid:<\/b> 109I<br><b>Dominant family:<\/b> Asteraceae<br><b>Total abundance:<\/b> 18<br><b>Family abundance:<\/b> 7<br><b>Dominance share:<\/b> 0.39","<b>Grid:<\/b> 10A<br><b>Dominant family:<\/b> Molluginaceae<br><b>Total abundance:<\/b> 18<br><b>Family abundance:<\/b> 8<br><b>Dominance share:<\/b> 0.44","<b>Grid:<\/b> 110I<br><b>Dominant family:<\/b> Poaceae<br><b>Total abundance:<\/b> 36<br><b>Family abundance:<\/b> 16<br><b>Dominance share:<\/b> 0.44","<b>Grid:<\/b> 111I<br><b>Dominant family:<\/b> Brassicaceae<br><b>Total abundance:<\/b> 55<br><b>Family abundance:<\/b> 22<br><b>Dominance share:<\/b> 0.4","<b>Grid:<\/b> 112I<br><b>Dominant family:<\/b> Cyperaceae<br><b>Total abundance:<\/b> 33<br><b>Family abundance:<\/b> 13<br><b>Dominance share:<\/b> 0.39","<b>Grid:<\/b> 113I<br><b>Dominant family:<\/b> Brassicaceae<br><b>Total abundance:<\/b> 63<br><b>Family abundance:<\/b> 26<br><b>Dominance share:<\/b> 0.41","<b>Grid:<\/b> 114I<br><b>Dominant family:<\/b> Asteraceae<br><b>Total abundance:<\/b> 146<br><b>Family abundance:<\/b> 66<br><b>Dominance share:<\/b> 0.45","<b>Grid:<\/b> 115I<br><b>Dominant family:<\/b> Oxalidaceae<br><b>Total abundance:<\/b> 29<br><b>Family abundance:<\/b> 14<br><b>Dominance share:<\/b> 0.48","<b>Grid:<\/b> 116I<br><b>Dominant family:<\/b> Asteraceae<br><b>Total abundance:<\/b> 85<br><b>Family abundance:<\/b> 36<br><b>Dominance share:<\/b> 0.42","<b>Grid:<\/b> 117I<br><b>Dominant family:<\/b> Cyperaceae<br><b>Total abundance:<\/b> 98<br><b>Family abundance:<\/b> 40<br><b>Dominance share:<\/b> 0.41","<b>Grid:<\/b> 118I<br><b>Dominant family:<\/b> Cyperaceae<br><b>Total abundance:<\/b> 72<br><b>Family abundance:<\/b> 34<br><b>Dominance share:<\/b> 0.47","<b>Grid:<\/b> 119I<br><b>Dominant family:<\/b> Poaceae<br><b>Total abundance:<\/b> 30<br><b>Family abundance:<\/b> 13<br><b>Dominance share:<\/b> 0.43","<b>Grid:<\/b> 11B<br><b>Dominant family:<\/b> Verbenaceae<br><b>Total abundance:<\/b> 31<br><b>Family abundance:<\/b> 27<br><b>Dominance share:<\/b> 0.87","<b>Grid:<\/b> 120I<br><b>Dominant family:<\/b> Asteraceae<br><b>Total abundance:<\/b> 6<br><b>Family abundance:<\/b> 3<br><b>Dominance share:<\/b> 0.5","<b>Grid:<\/b> 121I<br><b>Dominant family:<\/b> Asteraceae<br><b>Total abundance:<\/b> 20<br><b>Family abundance:<\/b> 8<br><b>Dominance share:<\/b> 0.4","<b>Grid:<\/b> 122I<br><b>Dominant family:<\/b> Asteraceae<br><b>Total abundance:<\/b> 31<br><b>Family abundance:<\/b> 9<br><b>Dominance share:<\/b> 0.29","<b>Grid:<\/b> 123I<br><b>Dominant family:<\/b> Molluginaceae<br><b>Total abundance:<\/b> 13<br><b>Family abundance:<\/b> 5<br><b>Dominance share:<\/b> 0.38","<b>Grid:<\/b> 125J<br><b>Dominant family:<\/b> Asteraceae<br><b>Total abundance:<\/b> 117<br><b>Family abundance:<\/b> 55<br><b>Dominance share:<\/b> 0.47","<b>Grid:<\/b> 126J<br><b>Dominant family:<\/b> Asteraceae<br><b>Total abundance:<\/b> 27<br><b>Family abundance:<\/b> 12<br><b>Dominance share:<\/b> 0.44","<b>Grid:<\/b> 127J<br><b>Dominant family:<\/b> Cyperaceae<br><b>Total abundance:<\/b> 112<br><b>Family abundance:<\/b> 91<br><b>Dominance share:<\/b> 0.81","<b>Grid:<\/b> 128J<br><b>Dominant family:<\/b> Asteraceae<br><b>Total abundance:<\/b> 21<br><b>Family abundance:<\/b> 9<br><b>Dominance share:<\/b> 0.43","<b>Grid:<\/b> 129J<br><b>Dominant family:<\/b> Cyperaceae<br><b>Total abundance:<\/b> 48<br><b>Family abundance:<\/b> 21<br><b>Dominance share:<\/b> 0.44","<b>Grid:<\/b> 12B<br><b>Dominant family:<\/b> Onagraceae<br><b>Total abundance:<\/b> 42<br><b>Family abundance:<\/b> 27<br><b>Dominance share:<\/b> 0.64","<b>Grid:<\/b> 130J<br><b>Dominant family:<\/b> Caryophyllaceae<br><b>Total abundance:<\/b> 10<br><b>Family abundance:<\/b> 7<br><b>Dominance share:<\/b> 0.7","<b>Grid:<\/b> 131J<br><b>Dominant family:<\/b> Cyperaceae<br><b>Total abundance:<\/b> 187<br><b>Family abundance:<\/b> 171<br><b>Dominance share:<\/b> 0.91","<b>Grid:<\/b> 132J<br><b>Dominant family:<\/b> Caryophyllaceae<br><b>Total abundance:<\/b> 46<br><b>Family abundance:<\/b> 13<br><b>Dominance share:<\/b> 0.28","<b>Grid:<\/b> 133J<br><b>Dominant family:<\/b> Asteraceae<br><b>Total abundance:<\/b> 99<br><b>Family abundance:<\/b> 46<br><b>Dominance share:<\/b> 0.46","<b>Grid:<\/b> 134J<br><b>Dominant family:<\/b> Cyperaceae<br><b>Total abundance:<\/b> 93<br><b>Family abundance:<\/b> 51<br><b>Dominance share:<\/b> 0.55","<b>Grid:<\/b> 135J<br><b>Dominant family:<\/b> Caryophyllaceae<br><b>Total abundance:<\/b> 19<br><b>Family abundance:<\/b> 5<br><b>Dominance share:<\/b> 0.26","<b>Grid:<\/b> 136J<br><b>Dominant family:<\/b> Asteraceae<br><b>Total abundance:<\/b> 50<br><b>Family abundance:<\/b> 24<br><b>Dominance share:<\/b> 0.48","<b>Grid:<\/b> 13B<br><b>Dominant family:<\/b> Plantaginaceae<br><b>Total abundance:<\/b> 32<br><b>Family abundance:<\/b> 12<br><b>Dominance share:<\/b> 0.38","<b>Grid:<\/b> 14B<br><b>Dominant family:<\/b> Caryophyllaceae<br><b>Total abundance:<\/b> 15<br><b>Family abundance:<\/b> 9<br><b>Dominance share:<\/b> 0.6","<b>Grid:<\/b> 15B<br><b>Dominant family:<\/b> Brassicaceae<br><b>Total abundance:<\/b> 15<br><b>Family abundance:<\/b> 8<br><b>Dominance share:<\/b> 0.53","<b>Grid:<\/b> 16B<br><b>Dominant family:<\/b> Onagraceae<br><b>Total abundance:<\/b> 27<br><b>Family abundance:<\/b> 11<br><b>Dominance share:<\/b> 0.41","<b>Grid:<\/b> 17B<br><b>Dominant family:<\/b> Onagraceae<br><b>Total abundance:<\/b> 8<br><b>Family abundance:<\/b> 5<br><b>Dominance share:<\/b> 0.62","<b>Grid:<\/b> 18B<br><b>Dominant family:<\/b> Onagraceae<br><b>Total abundance:<\/b> 56<br><b>Family abundance:<\/b> 30<br><b>Dominance share:<\/b> 0.54","<b>Grid:<\/b> 19B<br><b>Dominant family:<\/b> Violaceae<br><b>Total abundance:<\/b> 36<br><b>Family abundance:<\/b> 16<br><b>Dominance share:<\/b> 0.44","<b>Grid:<\/b> 1A<br><b>Dominant family:<\/b> Fabaceae<br><b>Total abundance:<\/b> 49<br><b>Family abundance:<\/b> 14<br><b>Dominance share:<\/b> 0.29","<b>Grid:<\/b> 20B<br><b>Dominant family:<\/b> Onagraceae<br><b>Total abundance:<\/b> 15<br><b>Family abundance:<\/b> 5<br><b>Dominance share:<\/b> 0.33","<b>Grid:<\/b> 21B<br><b>Dominant family:<\/b> Caryophyllaceae<br><b>Total abundance:<\/b> 19<br><b>Family abundance:<\/b> 13<br><b>Dominance share:<\/b> 0.68","<b>Grid:<\/b> 22C<br><b>Dominant family:<\/b> Asteraceae<br><b>Total abundance:<\/b> 44<br><b>Family abundance:<\/b> 10<br><b>Dominance share:<\/b> 0.23","<b>Grid:<\/b> 23C<br><b>Dominant family:<\/b> Oxalidaceae<br><b>Total abundance:<\/b> 28<br><b>Family abundance:<\/b> 8<br><b>Dominance share:<\/b> 0.29","<b>Grid:<\/b> 24C<br><b>Dominant family:<\/b> Onagraceae<br><b>Total abundance:<\/b> 21<br><b>Family abundance:<\/b> 6<br><b>Dominance share:<\/b> 0.29","<b>Grid:<\/b> 25C<br><b>Dominant family:<\/b> Caryophyllaceae<br><b>Total abundance:<\/b> 14<br><b>Family abundance:<\/b> 7<br><b>Dominance share:<\/b> 0.5","<b>Grid:<\/b> 26C<br><b>Dominant family:<\/b> Onagraceae<br><b>Total abundance:<\/b> 10<br><b>Family abundance:<\/b> 5<br><b>Dominance share:<\/b> 0.5","<b>Grid:<\/b> 27C<br><b>Dominant family:<\/b> Onagraceae<br><b>Total abundance:<\/b> 36<br><b>Family abundance:<\/b> 10<br><b>Dominance share:<\/b> 0.28","<b>Grid:<\/b> 28C<br><b>Dominant family:<\/b> Onagraceae<br><b>Total abundance:<\/b> 41<br><b>Family abundance:<\/b> 11<br><b>Dominance share:<\/b> 0.27","<b>Grid:<\/b> 29C<br><b>Dominant family:<\/b> Molluginaceae<br><b>Total abundance:<\/b> 25<br><b>Family abundance:<\/b> 9<br><b>Dominance share:<\/b> 0.36","<b>Grid:<\/b> 2A<br><b>Dominant family:<\/b> Onagraceae<br><b>Total abundance:<\/b> 21<br><b>Family abundance:<\/b> 7<br><b>Dominance share:<\/b> 0.33","<b>Grid:<\/b> 30C<br><b>Dominant family:<\/b> Molluginaceae<br><b>Total abundance:<\/b> 13<br><b>Family abundance:<\/b> 8<br><b>Dominance share:<\/b> 0.62","<b>Grid:<\/b> 31C<br><b>Dominant family:<\/b> Caryophyllaceae<br><b>Total abundance:<\/b> 23<br><b>Family abundance:<\/b> 11<br><b>Dominance share:<\/b> 0.48","<b>Grid:<\/b> 32C<br><b>Dominant family:<\/b> Molluginaceae<br><b>Total abundance:<\/b> 30<br><b>Family abundance:<\/b> 13<br><b>Dominance share:<\/b> 0.43","<b>Grid:<\/b> 33C<br><b>Dominant family:<\/b> Asteraceae<br><b>Total abundance:<\/b> 5<br><b>Family abundance:<\/b> 2<br><b>Dominance share:<\/b> 0.4","<b>Grid:<\/b> 34D<br><b>Dominant family:<\/b> Poaceae<br><b>Total abundance:<\/b> 24<br><b>Family abundance:<\/b> 12<br><b>Dominance share:<\/b> 0.5","<b>Grid:<\/b> 35D<br><b>Dominant family:<\/b> Poaceae<br><b>Total abundance:<\/b> 27<br><b>Family abundance:<\/b> 10<br><b>Dominance share:<\/b> 0.37","<b>Grid:<\/b> 36D<br><b>Dominant family:<\/b> Asteraceae<br><b>Total abundance:<\/b> 25<br><b>Family abundance:<\/b> 11<br><b>Dominance share:<\/b> 0.44","<b>Grid:<\/b> 37D<br><b>Dominant family:<\/b> Molluginaceae<br><b>Total abundance:<\/b> 13<br><b>Family abundance:<\/b> 5<br><b>Dominance share:<\/b> 0.38","<b>Grid:<\/b> 38D<br><b>Dominant family:<\/b> Onagraceae<br><b>Total abundance:<\/b> 21<br><b>Family abundance:<\/b> 10<br><b>Dominance share:<\/b> 0.48","<b>Grid:<\/b> 39D<br><b>Dominant family:<\/b> Molluginaceae<br><b>Total abundance:<\/b> 18<br><b>Family abundance:<\/b> 7<br><b>Dominance share:<\/b> 0.39","<b>Grid:<\/b> 3A<br><b>Dominant family:<\/b> Caryophyllaceae<br><b>Total abundance:<\/b> 55<br><b>Family abundance:<\/b> 17<br><b>Dominance share:<\/b> 0.31","<b>Grid:<\/b> 40D<br><b>Dominant family:<\/b> Onagraceae<br><b>Total abundance:<\/b> 24<br><b>Family abundance:<\/b> 13<br><b>Dominance share:<\/b> 0.54","<b>Grid:<\/b> 41D<br><b>Dominant family:<\/b> Fabaceae<br><b>Total abundance:<\/b> 83<br><b>Family abundance:<\/b> 52<br><b>Dominance share:<\/b> 0.63","<b>Grid:<\/b> 42D<br><b>Dominant family:<\/b> Fabaceae<br><b>Total abundance:<\/b> 61<br><b>Family abundance:<\/b> 16<br><b>Dominance share:<\/b> 0.26","<b>Grid:<\/b> 43D<br><b>Dominant family:<\/b> Asteraceae<br><b>Total abundance:<\/b> 66<br><b>Family abundance:<\/b> 16<br><b>Dominance share:<\/b> 0.24","<b>Grid:<\/b> 44D<br><b>Dominant family:<\/b> Caryophyllaceae<br><b>Total abundance:<\/b> 20<br><b>Family abundance:<\/b> 5<br><b>Dominance share:<\/b> 0.25","<b>Grid:<\/b> 45D<br><b>Dominant family:<\/b> Lamiaceae<br><b>Total abundance:<\/b> 70<br><b>Family abundance:<\/b> 36<br><b>Dominance share:<\/b> 0.51","<b>Grid:<\/b> 46D<br><b>Dominant family:<\/b> Fabaceae<br><b>Total abundance:<\/b> 21<br><b>Family abundance:<\/b> 11<br><b>Dominance share:<\/b> 0.52","<b>Grid:<\/b> 47E<br><b>Dominant family:<\/b> Asteraceae<br><b>Total abundance:<\/b> 31<br><b>Family abundance:<\/b> 9<br><b>Dominance share:<\/b> 0.29","<b>Grid:<\/b> 48E<br><b>Dominant family:<\/b> Onagraceae<br><b>Total abundance:<\/b> 30<br><b>Family abundance:<\/b> 23<br><b>Dominance share:<\/b> 0.77","<b>Grid:<\/b> 49E<br><b>Dominant family:<\/b> Caryophyllaceae<br><b>Total abundance:<\/b> 21<br><b>Family abundance:<\/b> 8<br><b>Dominance share:<\/b> 0.38","<b>Grid:<\/b> 4A<br><b>Dominant family:<\/b> Onagraceae<br><b>Total abundance:<\/b> 68<br><b>Family abundance:<\/b> 19<br><b>Dominance share:<\/b> 0.28","<b>Grid:<\/b> 50E<br><b>Dominant family:<\/b> Plantaginaceae<br><b>Total abundance:<\/b> 29<br><b>Family abundance:<\/b> 13<br><b>Dominance share:<\/b> 0.45","<b>Grid:<\/b> 51E<br><b>Dominant family:<\/b> Brassicaceae<br><b>Total abundance:<\/b> 28<br><b>Family abundance:<\/b> 12<br><b>Dominance share:<\/b> 0.43","<b>Grid:<\/b> 52E<br><b>Dominant family:<\/b> Brassicaceae<br><b>Total abundance:<\/b> 9<br><b>Family abundance:<\/b> 4<br><b>Dominance share:<\/b> 0.44","<b>Grid:<\/b> 53E<br><b>Dominant family:<\/b> Asteraceae<br><b>Total abundance:<\/b> 27<br><b>Family abundance:<\/b> 8<br><b>Dominance share:<\/b> 0.3","<b>Grid:<\/b> 54E<br><b>Dominant family:<\/b> Asteraceae<br><b>Total abundance:<\/b> 16<br><b>Family abundance:<\/b> 3<br><b>Dominance share:<\/b> 0.19","<b>Grid:<\/b> 55E<br><b>Dominant family:<\/b> Onagraceae<br><b>Total abundance:<\/b> 4<br><b>Family abundance:<\/b> 2<br><b>Dominance share:<\/b> 0.5","<b>Grid:<\/b> 56E<br><b>Dominant family:<\/b> Molluginaceae<br><b>Total abundance:<\/b> 9<br><b>Family abundance:<\/b> 3<br><b>Dominance share:<\/b> 0.33","<b>Grid:<\/b> 57E<br><b>Dominant family:<\/b> Onagraceae<br><b>Total abundance:<\/b> 14<br><b>Family abundance:<\/b> 8<br><b>Dominance share:<\/b> 0.57","<b>Grid:<\/b> 58E<br><b>Dominant family:<\/b> Onagraceae<br><b>Total abundance:<\/b> 192<br><b>Family abundance:<\/b> 148<br><b>Dominance share:<\/b> 0.77","<b>Grid:<\/b> 59E<br><b>Dominant family:<\/b> Asteraceae<br><b>Total abundance:<\/b> 63<br><b>Family abundance:<\/b> 36<br><b>Dominance share:<\/b> 0.57","<b>Grid:<\/b> 5A<br><b>Dominant family:<\/b> Caryophyllaceae<br><b>Total abundance:<\/b> 21<br><b>Family abundance:<\/b> 9<br><b>Dominance share:<\/b> 0.43","<b>Grid:<\/b> 60E<br><b>Dominant family:<\/b> Onagraceae<br><b>Total abundance:<\/b> 81<br><b>Family abundance:<\/b> 58<br><b>Dominance share:<\/b> 0.72","<b>Grid:<\/b> 61F<br><b>Dominant family:<\/b> Oxalidaceae<br><b>Total abundance:<\/b> 38<br><b>Family abundance:<\/b> 16<br><b>Dominance share:<\/b> 0.42","<b>Grid:<\/b> 62F<br><b>Dominant family:<\/b> Cyperaceae<br><b>Total abundance:<\/b> 26<br><b>Family abundance:<\/b> 12<br><b>Dominance share:<\/b> 0.46","<b>Grid:<\/b> 63F<br><b>Dominant family:<\/b> Onagraceae<br><b>Total abundance:<\/b> 130<br><b>Family abundance:<\/b> 51<br><b>Dominance share:<\/b> 0.39","<b>Grid:<\/b> 64F<br><b>Dominant family:<\/b> Onagraceae<br><b>Total abundance:<\/b> 71<br><b>Family abundance:<\/b> 32<br><b>Dominance share:<\/b> 0.45","<b>Grid:<\/b> 65F<br><b>Dominant family:<\/b> Onagraceae<br><b>Total abundance:<\/b> 44<br><b>Family abundance:<\/b> 13<br><b>Dominance share:<\/b> 0.3","<b>Grid:<\/b> 66F<br><b>Dominant family:<\/b> Asteraceae<br><b>Total abundance:<\/b> 38<br><b>Family abundance:<\/b> 24<br><b>Dominance share:<\/b> 0.63","<b>Grid:<\/b> 67F<br><b>Dominant family:<\/b> Onagraceae<br><b>Total abundance:<\/b> 51<br><b>Family abundance:<\/b> 22<br><b>Dominance share:<\/b> 0.43","<b>Grid:<\/b> 68F<br><b>Dominant family:<\/b> Onagraceae<br><b>Total abundance:<\/b> 33<br><b>Family abundance:<\/b> 9<br><b>Dominance share:<\/b> 0.27","<b>Grid:<\/b> 69F<br><b>Dominant family:<\/b> Onagraceae<br><b>Total abundance:<\/b> 130<br><b>Family abundance:<\/b> 74<br><b>Dominance share:<\/b> 0.57","<b>Grid:<\/b> 6A<br><b>Dominant family:<\/b> Caryophyllaceae<br><b>Total abundance:<\/b> 23<br><b>Family abundance:<\/b> 10<br><b>Dominance share:<\/b> 0.43","<b>Grid:<\/b> 70F<br><b>Dominant family:<\/b> Fabaceae<br><b>Total abundance:<\/b> 12<br><b>Family abundance:<\/b> 3<br><b>Dominance share:<\/b> 0.25","<b>Grid:<\/b> 71F<br><b>Dominant family:<\/b> Juncaceae<br><b>Total abundance:<\/b> 80<br><b>Family abundance:<\/b> 18<br><b>Dominance share:<\/b> 0.22","<b>Grid:<\/b> 72F<br><b>Dominant family:<\/b> Onagraceae<br><b>Total abundance:<\/b> 51<br><b>Family abundance:<\/b> 12<br><b>Dominance share:<\/b> 0.24","<b>Grid:<\/b> 73F<br><b>Dominant family:<\/b> Asteraceae<br><b>Total abundance:<\/b> 30<br><b>Family abundance:<\/b> 16<br><b>Dominance share:<\/b> 0.53","<b>Grid:<\/b> 74F<br><b>Dominant family:<\/b> Plantaginaceae<br><b>Total abundance:<\/b> 31<br><b>Family abundance:<\/b> 15<br><b>Dominance share:<\/b> 0.48","<b>Grid:<\/b> 75F<br><b>Dominant family:<\/b> Campanulaceae<br><b>Total abundance:<\/b> 2<br><b>Family abundance:<\/b> 1<br><b>Dominance share:<\/b> 0.5","<b>Grid:<\/b> 76G<br><b>Dominant family:<\/b> Asteraceae<br><b>Total abundance:<\/b> 55<br><b>Family abundance:<\/b> 16<br><b>Dominance share:<\/b> 0.29","<b>Grid:<\/b> 77G<br><b>Dominant family:<\/b> Cyperaceae<br><b>Total abundance:<\/b> 37<br><b>Family abundance:<\/b> 17<br><b>Dominance share:<\/b> 0.46","<b>Grid:<\/b> 78G<br><b>Dominant family:<\/b> Asteraceae<br><b>Total abundance:<\/b> 20<br><b>Family abundance:<\/b> 8<br><b>Dominance share:<\/b> 0.4","<b>Grid:<\/b> 79G<br><b>Dominant family:<\/b> Plantaginaceae<br><b>Total abundance:<\/b> 81<br><b>Family abundance:<\/b> 45<br><b>Dominance share:<\/b> 0.56","<b>Grid:<\/b> 7A<br><b>Dominant family:<\/b> Brassicaceae<br><b>Total abundance:<\/b> 16<br><b>Family abundance:<\/b> 8<br><b>Dominance share:<\/b> 0.5","<b>Grid:<\/b> 80G<br><b>Dominant family:<\/b> Asteraceae<br><b>Total abundance:<\/b> 59<br><b>Family abundance:<\/b> 36<br><b>Dominance share:<\/b> 0.61","<b>Grid:<\/b> 81G<br><b>Dominant family:<\/b> Cyperaceae<br><b>Total abundance:<\/b> 209<br><b>Family abundance:<\/b> 172<br><b>Dominance share:<\/b> 0.82","<b>Grid:<\/b> 82G<br><b>Dominant family:<\/b> Onagraceae<br><b>Total abundance:<\/b> 15<br><b>Family abundance:<\/b> 5<br><b>Dominance share:<\/b> 0.33","<b>Grid:<\/b> 83G<br><b>Dominant family:<\/b> Onagraceae<br><b>Total abundance:<\/b> 56<br><b>Family abundance:<\/b> 33<br><b>Dominance share:<\/b> 0.59","<b>Grid:<\/b> 84G<br><b>Dominant family:<\/b> Onagraceae<br><b>Total abundance:<\/b> 51<br><b>Family abundance:<\/b> 29<br><b>Dominance share:<\/b> 0.57","<b>Grid:<\/b> 85G<br><b>Dominant family:<\/b> Poaceae<br><b>Total abundance:<\/b> 63<br><b>Family abundance:<\/b> 20<br><b>Dominance share:<\/b> 0.32","<b>Grid:<\/b> 86G<br><b>Dominant family:<\/b> Poaceae<br><b>Total abundance:<\/b> 33<br><b>Family abundance:<\/b> 12<br><b>Dominance share:<\/b> 0.36","<b>Grid:<\/b> 87G<br><b>Dominant family:<\/b> Caryophyllaceae<br><b>Total abundance:<\/b> 12<br><b>Family abundance:<\/b> 4<br><b>Dominance share:<\/b> 0.33","<b>Grid:<\/b> 88G<br><b>Dominant family:<\/b> Caryophyllaceae<br><b>Total abundance:<\/b> 26<br><b>Family abundance:<\/b> 6<br><b>Dominance share:<\/b> 0.23","<b>Grid:<\/b> 89G<br><b>Dominant family:<\/b> Onagraceae<br><b>Total abundance:<\/b> 2<br><b>Family abundance:<\/b> 1<br><b>Dominance share:<\/b> 0.5","<b>Grid:<\/b> 8A<br><b>Dominant family:<\/b> Asteraceae<br><b>Total abundance:<\/b> 22<br><b>Family abundance:<\/b> 5<br><b>Dominance share:<\/b> 0.23","<b>Grid:<\/b> 90G<br><b>Dominant family:<\/b> Poaceae<br><b>Total abundance:<\/b> 17<br><b>Family abundance:<\/b> 8<br><b>Dominance share:<\/b> 0.47","<b>Grid:<\/b> 91G<br><b>Dominant family:<\/b> Onagraceae<br><b>Total abundance:<\/b> 28<br><b>Family abundance:<\/b> 9<br><b>Dominance share:<\/b> 0.32","<b>Grid:<\/b> 92G<br><b>Dominant family:<\/b> Onagraceae<br><b>Total abundance:<\/b> 43<br><b>Family abundance:<\/b> 11<br><b>Dominance share:<\/b> 0.26","<b>Grid:<\/b> 93H<br><b>Dominant family:<\/b> Oxalidaceae<br><b>Total abundance:<\/b> 11<br><b>Family abundance:<\/b> 7<br><b>Dominance share:<\/b> 0.64","<b>Grid:<\/b> 94H<br><b>Dominant family:<\/b> Poaceae<br><b>Total abundance:<\/b> 23<br><b>Family abundance:<\/b> 16<br><b>Dominance share:<\/b> 0.7","<b>Grid:<\/b> 95H<br><b>Dominant family:<\/b> Poaceae<br><b>Total abundance:<\/b> 78<br><b>Family abundance:<\/b> 35<br><b>Dominance share:<\/b> 0.45","<b>Grid:<\/b> 96H<br><b>Dominant family:<\/b> Onagraceae<br><b>Total abundance:<\/b> 47<br><b>Family abundance:<\/b> 23<br><b>Dominance share:<\/b> 0.49","<b>Grid:<\/b> 97H<br><b>Dominant family:<\/b> Onagraceae<br><b>Total abundance:<\/b> 80<br><b>Family abundance:<\/b> 67<br><b>Dominance share:<\/b> 0.84","<b>Grid:<\/b> 98H<br><b>Dominant family:<\/b> Plantaginaceae<br><b>Total abundance:<\/b> 47<br><b>Family abundance:<\/b> 15<br><b>Dominance share:<\/b> 0.32","<b>Grid:<\/b> 99H<br><b>Dominant family:<\/b> Oxalidaceae<br><b>Total abundance:<\/b> 94<br><b>Family abundance:<\/b> 76<br><b>Dominance share:<\/b> 0.81","<b>Grid:<\/b> 9A<br><b>Dominant family:<\/b> Asteraceae<br><b>Total abundance:<\/b> 45<br><b>Family abundance:<\/b> 23<br><b>Dominance share:<\/b> 0.51"],null,null,{"interactive":false,"permanent":false,"direction":"auto","opacity":1,"offset":[0,0],"textsize":"10px","textOnly":false,"className":"","sticky":true},null]},{"method":"addLegend","args":[{"colors":["#1B9E77","#9D8545","#D95F02","#B66866","#7570B3","#B6599E","#E7298A","#B27D5D","#66A61E","#AAAA14","#E6AB02","#C69016","#A6761D","#896E46","#666666"],"labels":["Asteraceae","Brassicaceae","Campanulaceae","Caryophyllaceae","Cyperaceae","Fabaceae","Juncaceae","Lamiaceae","Molluginaceae","Onagraceae","Oxalidaceae","Plantaginaceae","Poaceae","Verbenaceae","Violaceae"],"na_color":null,"na_label":"NA","opacity":1,"position":"bottomright","type":"factor","title":"Dominant family","extra":null,"layerId":null,"className":"info legend","group":null}]},{"method":"addControl","args":["<div style=\"&#10;    background: rgba(255,255,255,0.9);&#10;    padding: 8px 10px;&#10;    border-radius: 6px;&#10;    box-shadow: 0 1px 4px rgba(0,0,0,0.3);&#10;    font-size: 12px;&#10;    line-height: 16px;&#10;  \">\n  <div>\n    <b>Dominance (fill opacity)<\/b>\n  <\/div>\n  <div style=\"margin-top:6px;\">\n    <div style=\"display:flex; align-items:center; margin-bottom:4px;\">\n      <span style=\"display:inline-block; width:12px; height:12px; border-radius:50%;&#10;           background: rgba(0,0,0,0.25); border:1px solid #555; margin-right:8px;\"><\/span>\n      <span>0.25<\/span>\n    <\/div>\n    <div style=\"display:flex; align-items:center; margin-bottom:4px;\">\n      <span style=\"display:inline-block; width:12px; height:12px; border-radius:50%;&#10;           background: rgba(0,0,0,0.47); border:1px solid #555; margin-right:8px;\"><\/span>\n      <span>0.47<\/span>\n    <\/div>\n    <div style=\"display:flex; align-items:center; margin-bottom:4px;\">\n      <span style=\"display:inline-block; width:12px; height:12px; border-radius:50%;&#10;           background: rgba(0,0,0,0.69); border:1px solid #555; margin-right:8px;\"><\/span>\n      <span>0.69<\/span>\n    <\/div>\n    <div style=\"display:flex; align-items:center; margin-bottom:4px;\">\n      <span style=\"display:inline-block; width:12px; height:12px; border-radius:50%;&#10;           background: rgba(0,0,0,0.91); border:1px solid #555; margin-right:8px;\"><\/span>\n      <span>0.91<\/span>\n    <\/div>\n  <\/div>\n  <div style=\"margin-top:6px; color:#444;\">More opaque = stronger dominance<\/div>\n<\/div>","bottomleft",null,"info legend"]},{"method":"addControl","args":["<div style=\"&#10;    background: rgba(255,255,255,0.9);&#10;    padding: 8px 10px;&#10;    border-radius: 6px;&#10;    box-shadow: 0 1px 4px rgba(0,0,0,0.3);&#10;    font-size: 12px;&#10;    line-height: 16px;&#10;  \">\n  <div>\n    <b>Total abundance (size)<\/b>\n  <\/div>\n  <div style=\"margin-top:6px;\">\n    <div style=\"display:flex; align-items:center; margin-bottom:6px;\">\n      <span style=\"display:inline-block; width:8px; height:8px; border-radius:50%;&#10;           background: rgba(0,0,0,0.25); border:1px solid #555; margin-right:10px;\"><\/span>\n      <span>2<\/span>\n    <\/div>\n    <div style=\"display:flex; align-items:center; margin-bottom:6px;\">\n      <span style=\"display:inline-block; width:15px; height:15px; border-radius:50%;&#10;           background: rgba(0,0,0,0.25); border:1px solid #555; margin-right:10px;\"><\/span>\n      <span>31<\/span>\n    <\/div>\n    <div style=\"display:flex; align-items:center; margin-bottom:6px;\">\n      <span style=\"display:inline-block; width:21px; height:21px; border-radius:50%;&#10;           background: rgba(0,0,0,0.25); border:1px solid #555; margin-right:10px;\"><\/span>\n      <span>56<\/span>\n    <\/div>\n    <div style=\"display:flex; align-items:center; margin-bottom:6px;\">\n      <span style=\"display:inline-block; width:36px; height:36px; border-radius:50%;&#10;           background: rgba(0,0,0,0.25); border:1px solid #555; margin-right:10px;\"><\/span>\n      <span>120<\/span>\n    <\/div>\n  <\/div>\n<\/div>","topleft",null,"info legend"]}],"limits":{"lat":[32.43059998,32.437943],"lng":[-83.73623814,-83.72187989]}},"evals":[],"jsHooks":[]}</script>
+</div>
+</div>
+</section>
+</section>
+<section id="build-training-table-for-rf-soil-property-rasters" class="level3">
+<h3 class="anchored" data-anchor-id="build-training-table-for-rf-soil-property-rasters">Build training table for RF soil-property rasters</h3>
+<section id="based-on-surface-samples-using-covariates-extracted-at-soil-sampling-points." class="level6">
+<h6 class="anchored" data-anchor-id="based-on-surface-samples-using-covariates-extracted-at-soil-sampling-points.">Based on surface samples, using covariates extracted at soil sampling points.</h6>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb6"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a><span class="co"># --- RF soil-property rasters from surface samples ---</span></span>
+<span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a>taxa <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="st">"Common Name"</span>,<span class="st">"Genus"</span>,<span class="st">"Species"</span>,<span class="st">"Family"</span>,<span class="st">"Life Cycle"</span>,<span class="st">"Season"</span>,<span class="st">"Type"</span>)</span>
+<span id="cb6-3"><a href="#cb6-3" aria-hidden="true" tabindex="-1"></a><span class="co"># surface soil vars you want to model as rasters</span></span>
+<span id="cb6-4"><a href="#cb6-4" aria-hidden="true" tabindex="-1"></a>soil_vars <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="st">"lbc"</span>, <span class="st">"lbc_eq"</span>, <span class="st">"p_h_2"</span>, <span class="st">"ca"</span>, <span class="st">"k"</span>, <span class="st">"mg"</span>, <span class="st">"mn"</span>, <span class="st">"p"</span>, <span class="st">"zn"</span>)</span>
+<span id="cb6-5"><a href="#cb6-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb6-6"><a href="#cb6-6" aria-hidden="true" tabindex="-1"></a><span class="co"># 1. Build soil training table: soil ~ covariates</span></span>
+<span id="cb6-7"><a href="#cb6-7" aria-hidden="true" tabindex="-1"></a><span class="co">#    Assume x/y are in lon/lat (as in your fixed weed code)</span></span>
+<span id="cb6-8"><a href="#cb6-8" aria-hidden="true" tabindex="-1"></a>soil_pts_ll <span class="ot">&lt;-</span> surface_sampling <span class="sc">%&gt;%</span></span>
+<span id="cb6-9"><a href="#cb6-9" aria-hidden="true" tabindex="-1"></a>  <span class="fu">select</span>(row_num, x, y, <span class="fu">all_of</span>(soil_vars)) <span class="sc">%&gt;%</span></span>
+<span id="cb6-10"><a href="#cb6-10" aria-hidden="true" tabindex="-1"></a>  <span class="fu">st_as_sf</span>(<span class="at">coords =</span> <span class="fu">c</span>(<span class="st">"x"</span>, <span class="st">"y"</span>), <span class="at">crs =</span> <span class="dv">4326</span>)</span>
+<span id="cb6-11"><a href="#cb6-11" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb6-12"><a href="#cb6-12" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb6-13"><a href="#cb6-13" aria-hidden="true" tabindex="-1"></a><span class="co"># transform to covariate CRS (same as cov_stack)</span></span>
+<span id="cb6-14"><a href="#cb6-14" aria-hidden="true" tabindex="-1"></a>soil_pts_cov <span class="ot">&lt;-</span> <span class="fu">st_transform</span>(soil_pts_ll, <span class="fu">crs</span>(cov_stack))</span>
+<span id="cb6-15"><a href="#cb6-15" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb6-16"><a href="#cb6-16" aria-hidden="true" tabindex="-1"></a><span class="co"># extract covariates at soil points</span></span>
+<span id="cb6-17"><a href="#cb6-17" aria-hidden="true" tabindex="-1"></a>soil_cov_vals <span class="ot">&lt;-</span> terra<span class="sc">::</span><span class="fu">extract</span>(cov_stack, <span class="fu">vect</span>(soil_pts_cov))</span>
+<span id="cb6-18"><a href="#cb6-18" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb6-19"><a href="#cb6-19" aria-hidden="true" tabindex="-1"></a>soil_training <span class="ot">&lt;-</span> soil_pts_cov <span class="sc">%&gt;%</span></span>
+<span id="cb6-20"><a href="#cb6-20" aria-hidden="true" tabindex="-1"></a>  <span class="fu">st_drop_geometry</span>() <span class="sc">%&gt;%</span></span>
+<span id="cb6-21"><a href="#cb6-21" aria-hidden="true" tabindex="-1"></a>  <span class="fu">bind_cols</span>(soil_cov_vals) <span class="sc">%&gt;%</span></span>
+<span id="cb6-22"><a href="#cb6-22" aria-hidden="true" tabindex="-1"></a>  <span class="fu">clean_names</span>()</span>
+<span id="cb6-23"><a href="#cb6-23" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb6-24"><a href="#cb6-24" aria-hidden="true" tabindex="-1"></a><span class="co"># clean cov_stack names the same way (critical!)</span></span>
+<span id="cb6-25"><a href="#cb6-25" aria-hidden="true" tabindex="-1"></a><span class="fu">names</span>(cov_stack) <span class="ot">&lt;-</span> janitor<span class="sc">::</span><span class="fu">make_clean_names</span>(<span class="fu">names</span>(cov_stack))</span>
+<span id="cb6-26"><a href="#cb6-26" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb6-27"><a href="#cb6-27" aria-hidden="true" tabindex="-1"></a><span class="co"># predictors available in BOTH soil_training and cov_stack</span></span>
+<span id="cb6-28"><a href="#cb6-28" aria-hidden="true" tabindex="-1"></a>covar_names <span class="ot">&lt;-</span> <span class="fu">intersect</span>(<span class="fu">names</span>(cov_stack), <span class="fu">colnames</span>(soil_training))</span>
+<span id="cb6-29"><a href="#cb6-29" aria-hidden="true" tabindex="-1"></a>covar_names</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+</section>
+</section>
+
+</main>
+<!-- /main column -->
+<script id="quarto-html-after-body" type="application/javascript">
+  window.document.addEventListener("DOMContentLoaded", function (event) {
+    const icon = "";
+    const anchorJS = new window.AnchorJS();
+    anchorJS.options = {
+      placement: 'right',
+      icon: icon
+    };
+    anchorJS.add('.anchored');
+    const isCodeAnnotation = (el) => {
+      for (const clz of el.classList) {
+        if (clz.startsWith('code-annotation-')) {                     
+          return true;
+        }
+      }
+      return false;
+    }
+    const onCopySuccess = function(e) {
+      // button target
+      const button = e.trigger;
+      // don't keep focus
+      button.blur();
+      // flash "checked"
+      button.classList.add('code-copy-button-checked');
+      var currentTitle = button.getAttribute("title");
+      button.setAttribute("title", "Copied!");
+      let tooltip;
+      if (window.bootstrap) {
+        button.setAttribute("data-bs-toggle", "tooltip");
+        button.setAttribute("data-bs-placement", "left");
+        button.setAttribute("data-bs-title", "Copied!");
+        tooltip = new bootstrap.Tooltip(button, 
+          { trigger: "manual", 
+            customClass: "code-copy-button-tooltip",
+            offset: [0, -8]});
+        tooltip.show();    
+      }
+      setTimeout(function() {
+        if (tooltip) {
+          tooltip.hide();
+          button.removeAttribute("data-bs-title");
+          button.removeAttribute("data-bs-toggle");
+          button.removeAttribute("data-bs-placement");
+        }
+        button.setAttribute("title", currentTitle);
+        button.classList.remove('code-copy-button-checked');
+      }, 1000);
+      // clear code selection
+      e.clearSelection();
+    }
+    const getTextToCopy = function(trigger) {
+      const outerScaffold = trigger.parentElement.cloneNode(true);
+      const codeEl = outerScaffold.querySelector('code');
+      for (const childEl of codeEl.children) {
+        if (isCodeAnnotation(childEl)) {
+          childEl.remove();
+        }
+      }
+      return codeEl.innerText;
+    }
+    const clipboard = new window.ClipboardJS('.code-copy-button:not([data-in-quarto-modal])', {
+      text: getTextToCopy
+    });
+    clipboard.on('success', onCopySuccess);
+    if (window.document.getElementById('quarto-embedded-source-code-modal')) {
+      const clipboardModal = new window.ClipboardJS('.code-copy-button[data-in-quarto-modal]', {
+        text: getTextToCopy,
+        container: window.document.getElementById('quarto-embedded-source-code-modal')
+      });
+      clipboardModal.on('success', onCopySuccess);
+    }
+      var localhostRegex = new RegExp(/^(?:http|https):\/\/localhost\:?[0-9]*\//);
+      var mailtoRegex = new RegExp(/^mailto:/);
+        var filterRegex = new RegExp('/' + window.location.host + '/');
+      var isInternal = (href) => {
+          return filterRegex.test(href) || localhostRegex.test(href) || mailtoRegex.test(href);
+      }
+      // Inspect non-navigation links and adorn them if external
+     var links = window.document.querySelectorAll('a[href]:not(.nav-link):not(.navbar-brand):not(.toc-action):not(.sidebar-link):not(.sidebar-item-toggle):not(.pagination-link):not(.no-external):not([aria-hidden]):not(.dropdown-item):not(.quarto-navigation-tool):not(.about-link)');
+      for (var i=0; i<links.length; i++) {
+        const link = links[i];
+        if (!isInternal(link.href)) {
+          // undo the damage that might have been done by quarto-nav.js in the case of
+          // links that we want to consider external
+          if (link.dataset.originalHref !== undefined) {
+            link.href = link.dataset.originalHref;
+          }
+        }
+      }
+    function tippyHover(el, contentFn, onTriggerFn, onUntriggerFn) {
+      const config = {
+        allowHTML: true,
+        maxWidth: 500,
+        delay: 100,
+        arrow: false,
+        appendTo: function(el) {
+            return el.parentElement;
+        },
+        interactive: true,
+        interactiveBorder: 10,
+        theme: 'quarto',
+        placement: 'bottom-start',
+      };
+      if (contentFn) {
+        config.content = contentFn;
+      }
+      if (onTriggerFn) {
+        config.onTrigger = onTriggerFn;
+      }
+      if (onUntriggerFn) {
+        config.onUntrigger = onUntriggerFn;
+      }
+      window.tippy(el, config); 
+    }
+    const noterefs = window.document.querySelectorAll('a[role="doc-noteref"]');
+    for (var i=0; i<noterefs.length; i++) {
+      const ref = noterefs[i];
+      tippyHover(ref, function() {
+        // use id or data attribute instead here
+        let href = ref.getAttribute('data-footnote-href') || ref.getAttribute('href');
+        try { href = new URL(href).hash; } catch {}
+        const id = href.replace(/^#\/?/, "");
+        const note = window.document.getElementById(id);
+        if (note) {
+          return note.innerHTML;
+        } else {
+          return "";
+        }
+      });
+    }
+    const xrefs = window.document.querySelectorAll('a.quarto-xref');
+    const processXRef = (id, note) => {
+      // Strip column container classes
+      const stripColumnClz = (el) => {
+        el.classList.remove("page-full", "page-columns");
+        if (el.children) {
+          for (const child of el.children) {
+            stripColumnClz(child);
+          }
+        }
+      }
+      stripColumnClz(note)
+      if (id === null || id.startsWith('sec-')) {
+        // Special case sections, only their first couple elements
+        const container = document.createElement("div");
+        if (note.children && note.children.length > 2) {
+          container.appendChild(note.children[0].cloneNode(true));
+          for (let i = 1; i < note.children.length; i++) {
+            const child = note.children[i];
+            if (child.tagName === "P" && child.innerText === "") {
+              continue;
+            } else {
+              container.appendChild(child.cloneNode(true));
+              break;
+            }
+          }
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(container);
+          }
+          return container.innerHTML
+        } else {
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(note);
+          }
+          return note.innerHTML;
+        }
+      } else {
+        // Remove any anchor links if they are present
+        const anchorLink = note.querySelector('a.anchorjs-link');
+        if (anchorLink) {
+          anchorLink.remove();
+        }
+        if (window.Quarto?.typesetMath) {
+          window.Quarto.typesetMath(note);
+        }
+        if (note.classList.contains("callout")) {
+          return note.outerHTML;
+        } else {
+          return note.innerHTML;
+        }
+      }
+    }
+    for (var i=0; i<xrefs.length; i++) {
+      const xref = xrefs[i];
+      tippyHover(xref, undefined, function(instance) {
+        instance.disable();
+        let url = xref.getAttribute('href');
+        let hash = undefined; 
+        if (url.startsWith('#')) {
+          hash = url;
+        } else {
+          try { hash = new URL(url).hash; } catch {}
+        }
+        if (hash) {
+          const id = hash.replace(/^#\/?/, "");
+          const note = window.document.getElementById(id);
+          if (note !== null) {
+            try {
+              const html = processXRef(id, note.cloneNode(true));
+              instance.setContent(html);
+            } finally {
+              instance.enable();
+              instance.show();
+            }
+          } else {
+            // See if we can fetch this
+            fetch(url.split('#')[0])
+            .then(res => res.text())
+            .then(html => {
+              const parser = new DOMParser();
+              const htmlDoc = parser.parseFromString(html, "text/html");
+              const note = htmlDoc.getElementById(id);
+              if (note !== null) {
+                const html = processXRef(id, note);
+                instance.setContent(html);
+              } 
+            }).finally(() => {
+              instance.enable();
+              instance.show();
+            });
+          }
+        } else {
+          // See if we can fetch a full url (with no hash to target)
+          // This is a special case and we should probably do some content thinning / targeting
+          fetch(url)
+          .then(res => res.text())
+          .then(html => {
+            const parser = new DOMParser();
+            const htmlDoc = parser.parseFromString(html, "text/html");
+            const note = htmlDoc.querySelector('main.content');
+            if (note !== null) {
+              // This should only happen for chapter cross references
+              // (since there is no id in the URL)
+              // remove the first header
+              if (note.children.length > 0 && note.children[0].tagName === "HEADER") {
+                note.children[0].remove();
+              }
+              const html = processXRef(null, note);
+              instance.setContent(html);
+            } 
+          }).finally(() => {
+            instance.enable();
+            instance.show();
+          });
+        }
+      }, function(instance) {
+      });
+    }
+        let selectedAnnoteEl;
+        const selectorForAnnotation = ( cell, annotation) => {
+          let cellAttr = 'data-code-cell="' + cell + '"';
+          let lineAttr = 'data-code-annotation="' +  annotation + '"';
+          const selector = 'span[' + cellAttr + '][' + lineAttr + ']';
+          return selector;
+        }
+        const selectCodeLines = (annoteEl) => {
+          const doc = window.document;
+          const targetCell = annoteEl.getAttribute("data-target-cell");
+          const targetAnnotation = annoteEl.getAttribute("data-target-annotation");
+          const annoteSpan = window.document.querySelector(selectorForAnnotation(targetCell, targetAnnotation));
+          const lines = annoteSpan.getAttribute("data-code-lines").split(",");
+          const lineIds = lines.map((line) => {
+            return targetCell + "-" + line;
+          })
+          let top = null;
+          let height = null;
+          let parent = null;
+          if (lineIds.length > 0) {
+              //compute the position of the single el (top and bottom and make a div)
+              const el = window.document.getElementById(lineIds[0]);
+              top = el.offsetTop;
+              height = el.offsetHeight;
+              parent = el.parentElement.parentElement;
+            if (lineIds.length > 1) {
+              const lastEl = window.document.getElementById(lineIds[lineIds.length - 1]);
+              const bottom = lastEl.offsetTop + lastEl.offsetHeight;
+              height = bottom - top;
+            }
+            if (top !== null && height !== null && parent !== null) {
+              // cook up a div (if necessary) and position it 
+              let div = window.document.getElementById("code-annotation-line-highlight");
+              if (div === null) {
+                div = window.document.createElement("div");
+                div.setAttribute("id", "code-annotation-line-highlight");
+                div.style.position = 'absolute';
+                parent.appendChild(div);
+              }
+              div.style.top = top - 2 + "px";
+              div.style.height = height + 4 + "px";
+              div.style.left = 0;
+              let gutterDiv = window.document.getElementById("code-annotation-line-highlight-gutter");
+              if (gutterDiv === null) {
+                gutterDiv = window.document.createElement("div");
+                gutterDiv.setAttribute("id", "code-annotation-line-highlight-gutter");
+                gutterDiv.style.position = 'absolute';
+                const codeCell = window.document.getElementById(targetCell);
+                const gutter = codeCell.querySelector('.code-annotation-gutter');
+                gutter.appendChild(gutterDiv);
+              }
+              gutterDiv.style.top = top - 2 + "px";
+              gutterDiv.style.height = height + 4 + "px";
+            }
+            selectedAnnoteEl = annoteEl;
+          }
+        };
+        const unselectCodeLines = () => {
+          const elementsIds = ["code-annotation-line-highlight", "code-annotation-line-highlight-gutter"];
+          elementsIds.forEach((elId) => {
+            const div = window.document.getElementById(elId);
+            if (div) {
+              div.remove();
+            }
+          });
+          selectedAnnoteEl = undefined;
+        };
+          // Handle positioning of the toggle
+      window.addEventListener(
+        "resize",
+        throttle(() => {
+          elRect = undefined;
+          if (selectedAnnoteEl) {
+            selectCodeLines(selectedAnnoteEl);
+          }
+        }, 10)
+      );
+      function throttle(fn, ms) {
+      let throttle = false;
+      let timer;
+        return (...args) => {
+          if(!throttle) { // first call gets through
+              fn.apply(this, args);
+              throttle = true;
+          } else { // all the others get throttled
+              if(timer) clearTimeout(timer); // cancel #2
+              timer = setTimeout(() => {
+                fn.apply(this, args);
+                timer = throttle = false;
+              }, ms);
+          }
+        };
+      }
+        // Attach click handler to the DT
+        const annoteDls = window.document.querySelectorAll('dt[data-target-cell]');
+        for (const annoteDlNode of annoteDls) {
+          annoteDlNode.addEventListener('click', (event) => {
+            const clickedEl = event.target;
+            if (clickedEl !== selectedAnnoteEl) {
+              unselectCodeLines();
+              const activeEl = window.document.querySelector('dt[data-target-cell].code-annotation-active');
+              if (activeEl) {
+                activeEl.classList.remove('code-annotation-active');
+              }
+              selectCodeLines(clickedEl);
+              clickedEl.classList.add('code-annotation-active');
+            } else {
+              // Unselect the line
+              unselectCodeLines();
+              clickedEl.classList.remove('code-annotation-active');
+            }
+          });
+        }
+    const findCites = (el) => {
+      const parentEl = el.parentElement;
+      if (parentEl) {
+        const cites = parentEl.dataset.cites;
+        if (cites) {
+          return {
+            el,
+            cites: cites.split(' ')
+          };
+        } else {
+          return findCites(el.parentElement)
+        }
+      } else {
+        return undefined;
+      }
+    };
+    var bibliorefs = window.document.querySelectorAll('a[role="doc-biblioref"]');
+    for (var i=0; i<bibliorefs.length; i++) {
+      const ref = bibliorefs[i];
+      const citeInfo = findCites(ref);
+      if (citeInfo) {
+        tippyHover(citeInfo.el, function() {
+          var popup = window.document.createElement('div');
+          citeInfo.cites.forEach(function(cite) {
+            var citeDiv = window.document.createElement('div');
+            citeDiv.classList.add('hanging-indent');
+            citeDiv.classList.add('csl-entry');
+            var biblioDiv = window.document.getElementById('ref-' + cite);
+            if (biblioDiv) {
+              citeDiv.innerHTML = biblioDiv.innerHTML;
+            }
+            popup.appendChild(citeDiv);
+          });
+          return popup.innerHTML;
+        });
+      }
+    }
+  });
+  </script>
+</div> <!-- /content -->
+
+
+
+
+</body></html>
