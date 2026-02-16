@@ -1,0 +1,256 @@
+---
+title: "SSWEEP_proj_02_16_2026"
+format: html
+---
+
+```{r libraries, message=FALSE, warning=FALSE}
+#libraries
+library(tidyverse)
+library(sf)
+library(ggplot2)
+library(readxl)
+library(terra)
+library(ranger)
+library(viridis)
+library(janitor)
+library(randomForest)
+library(purrr)
+library(reshape2)
+library(leaflet)
+library(scales)
+library(htmltools)
+```
+
+
+```{r load data, message=FALSE, warning=FALSE}
+  #load data:
+  #new weed ID data (xlsx)
+  weed_id_tax <- read_excel("../data/SSWEEP_data_with_tax_and_indices_02_2026.xlsx", sheet = "SSWEEP")
+  #indices:
+  weed_idx <- read_excel("../data/SSWEEP_data_with_tax_and_indices_02_2026.xlsx", sheet = "Calculations for each grid")
+
+  #Weed ID data (xlsx):
+  weed_id <- read_csv("../data/SSWEEP_weed_id_count_data.csv")
+    #keep Total sheet but discard other sheets:
+    
+  #surface sampling (15cm) (.csv):
+  surface_sampling <- read_csv("../data/SSWEEP_surface_SP_samples.csv")
+  
+  #full profile samples:
+  full_profile <- read_csv("../data/SSWEEP_full_profile_samples.csv")
+    #covariate stack (.tfs):
+     cov_stack <- rast("../data/covariate_stack_3m.tif")
+
+```
+
+
+```{r data wrangling, message=FALSE, warning=FALSE}
+#clean weed_id_tax:
+weed_id_tax <- weed_id_tax %>%
+  select(1:143) %>%
+  #select rows 1:72:
+  slice(1:72)
+
+#weed id columns are rows under surface sampling row_num column:
+#pivot all columns of weed id:
+weed_id_long <- weed_id_tax %>%
+  pivot_longer( cols = -c("Common Name","Genus","Species","Family","Life Cycle","Season","Type"),
+               names_to = "row_num", 
+               values_to = "weed_count") %>%
+  #rename ...1 to weed_species 
+  rename(weed_species = "Common Name")
+
+#join row_num 
+surface_sampling_weed <- surface_sampling %>%
+  left_join(weed_id_long, by = "row_num") %>%
+  clean_names()
+
+head(surface_sampling_weed)
+
+```
+
+```{r}
+
+
+# ---- 1) dominant family + dominance share ----
+weed_point_family <- surface_sampling_weed %>%
+  mutate(
+    weed_count = as.numeric(weed_count),
+    family = str_squish(family)
+  ) %>%
+  filter(!is.na(weed_count)) %>%
+  group_by(row_num) %>%
+  mutate(total_abundance = sum(weed_count, na.rm = TRUE)) %>%
+  ungroup() %>%
+  group_by(row_num, family) %>%
+  summarise(
+    x = first(x),
+    y = first(y),
+    total_abundance = first(total_abundance),
+    family_abundance = sum(weed_count, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  group_by(row_num) %>%
+  slice_max(order_by = family_abundance, n = 1, with_ties = FALSE) %>%
+  mutate(dominance = family_abundance / pmax(total_abundance, 1)) %>%
+  ungroup()
+
+weed_sf <- st_as_sf(weed_point_family, coords = c("x","y"), crs = 4326)
+
+# ---- 2) palettes + scaling ----
+fam_levels <- sort(unique(weed_sf$family))
+pal <- colorFactor(palette = "Dark2", domain = fam_levels)   # or "Dark2", "Paired", etc.
+
+# radius from total abundance (cap so one crazy point doesn't take over)
+rad <- rescale(weed_sf$total_abundance,
+               to = c(4, 18),
+               from = c(min(weed_sf$total_abundance, na.rm=TRUE),
+                        quantile(weed_sf$total_abundance, 0.95, na.rm=TRUE)))
+rad <- pmax(4, rad)
+
+# alpha from dominance (keep visible even if low)
+alpha_fill <- pmax(0.25, pmin(1, weed_sf$dominance))
+
+# popup text
+popup_txt <- paste0(
+  "<b>Grid:</b> ", weed_sf$row_num,
+  "<br><b>Dominant family:</b> ", weed_sf$family,
+  "<br><b>Total abundance:</b> ", weed_sf$total_abundance,
+  "<br><b>Family abundance:</b> ", weed_sf$family_abundance,
+  "<br><b>Dominance share:</b> ", round(weed_sf$dominance, 2)
+)
+
+# ---- 3) leaflet map with imagery basemap ----
+# build an "alpha legend" as HTML
+alpha_vals <- round(seq(max(0.25, min(weed_sf$dominance, na.rm=TRUE)),
+                        max(weed_sf$dominance, na.rm=TRUE),
+                        length.out = 4), 2)
+
+alpha_legend <- tags$div(
+  style = "
+    background: rgba(255,255,255,0.9);
+    padding: 8px 10px;
+    border-radius: 6px;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.3);
+    font-size: 12px;
+    line-height: 16px;
+  ",
+  tags$div(tags$b("Dominance (fill opacity)")),
+  tags$div(style="margin-top:6px;",
+    lapply(alpha_vals, function(a){
+      tags$div(style="display:flex; align-items:center; margin-bottom:4px;",
+        # a little circle swatch with different alpha
+        tags$span(style = sprintf(
+          "display:inline-block; width:12px; height:12px; border-radius:50%%;
+           background: rgba(0,0,0,%.2f); border:1px solid #555; margin-right:8px;",
+          a
+        )),
+        tags$span(sprintf("%.2f", a))
+      )
+    })
+  ),
+  tags$div(style="margin-top:6px; color:#444;",
+           "More opaque = stronger dominance")
+)
+# ---- SIZE LEGEND (abundance -> circle radius) ----
+# pick 4 representative abundance values (min, median, 75th, 95th-ish)
+ab_vals <- c(
+  min(weed_sf$total_abundance, na.rm = TRUE),
+  median(weed_sf$total_abundance, na.rm = TRUE),
+  quantile(weed_sf$total_abundance, 0.75, na.rm = TRUE),
+  quantile(weed_sf$total_abundance, 0.95, na.rm = TRUE)
+) %>% as.numeric() %>% unique() %>% sort()
+
+# convert those abundance values to radii using the SAME mapping you used for points
+rad_fun <- function(x) {
+  rescale(x, to = c(4, 18),
+          from = c(min(weed_sf$total_abundance, na.rm=TRUE),
+                   quantile(weed_sf$total_abundance, 0.95, na.rm=TRUE))) %>%
+    pmax(4) %>% pmin(18)
+}
+
+rad_vals <- rad_fun(ab_vals)
+
+size_legend <- tags$div(
+  style = "
+    background: rgba(255,255,255,0.9);
+    padding: 8px 10px;
+    border-radius: 6px;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.3);
+    font-size: 12px;
+    line-height: 16px;
+  ",
+  tags$div(tags$b("Total abundance (size)")),
+  tags$div(style="margin-top:6px;",
+    lapply(seq_along(ab_vals), function(i){
+      r <- rad_vals[i]
+      tags$div(style="display:flex; align-items:center; margin-bottom:6px;",
+        # circle swatch sized by radius (diameter = 2r)
+        tags$span(style = sprintf(
+          "display:inline-block; width:%dpx; height:%dpx; border-radius:50%%;
+           background: rgba(0,0,0,0.25); border:1px solid #555; margin-right:10px;",
+          round(2*r), round(2*r)
+        )),
+        tags$span(format(round(ab_vals[i], 1), trim = TRUE))
+      )
+    })
+  )
+)
+
+leaflet(weed_sf) %>%
+  addProviderTiles(providers$Esri.WorldImagery, group = "Imagery") %>%
+  addProviderTiles(providers$CartoDB.Positron, group = "Light") %>%
+  addLayersControl(baseGroups = c("Imagery", "Light"),
+                   options = layersControlOptions(collapsed = TRUE)) %>%
+  addCircleMarkers(
+    radius = rad,
+    color = ~pal(family),
+    weight = 2,
+    opacity = 1,
+    fillColor = ~pal(family),
+    fillOpacity = alpha_fill,
+    popup = popup_txt
+  ) %>%
+  addLegend("bottomright",
+            pal = pal,
+            values = ~family,
+            title = "Dominant family",
+            opacity = 1) %>%
+  addControl(alpha_legend, position = "bottomleft") %>%
+  addControl(size_legend, position = "topleft")
+
+```
+
+```{r}
+# --- RF soil-property rasters from surface samples ---
+taxa <- c("Common Name","Genus","Species","Family","Life Cycle","Season","Type")
+# surface soil vars you want to model as rasters
+soil_vars <- c("lbc", "lbc_eq", "p_h_2", "ca", "k", "mg", "mn", "p", "zn")
+
+# 1. Build soil training table: soil ~ covariates
+#    Assume x/y are in lon/lat (as in your fixed weed code)
+soil_pts_ll <- surface_sampling %>%
+  select(row_num, x, y, all_of(soil_vars)) %>%
+  st_as_sf(coords = c("x", "y"), crs = 4326)
+
+
+# transform to covariate CRS (same as cov_stack)
+soil_pts_cov <- st_transform(soil_pts_ll, crs(cov_stack))
+
+# extract covariates at soil points
+soil_cov_vals <- terra::extract(cov_stack, vect(soil_pts_cov))
+
+soil_training <- soil_pts_cov %>%
+  st_drop_geometry() %>%
+  bind_cols(soil_cov_vals) %>%
+  clean_names()
+
+# clean cov_stack names the same way (critical!)
+names(cov_stack) <- janitor::make_clean_names(names(cov_stack))
+
+# predictors available in BOTH soil_training and cov_stack
+covar_names <- intersect(names(cov_stack), colnames(soil_training))
+covar_names
+
+```
+
