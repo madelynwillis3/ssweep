@@ -3,6 +3,8 @@ title: "SSWEEP_proj_02_16_2026"
 format: html
 ---
 
+##### Load libraries
+
 ```{r libraries, message=FALSE, warning=FALSE}
 #libraries
 library(tidyverse)
@@ -21,6 +23,7 @@ library(scales)
 library(htmltools)
 ```
 
+##### Load data
 
 ```{r load data, message=FALSE, warning=FALSE}
   #load data:
@@ -37,12 +40,13 @@ library(htmltools)
   surface_sampling <- read_csv("../data/SSWEEP_surface_SP_samples.csv")
   
   #full profile samples:
-  full_profile <- read_csv("../data/SSWEEP_full_profile_samples.csv")
+  # full_profile <- read_csv("../data/SSWEEP_full_profile_samples.csv")
     #covariate stack (.tfs):
-     cov_stack <- rast("../data/covariate_stack_3m.tif")
+     # cov_stack <- rast("../data/covariate_stack_3m.tif")
 
 ```
 
+##### Data wrangling: join weed ID data to surface sampling points
 
 ```{r data wrangling, message=FALSE, warning=FALSE}
 #clean weed_id_tax:
@@ -69,7 +73,11 @@ head(surface_sampling_weed)
 
 ```
 
-```{r}
+### Map of dominant weed family + dominance share (family abundance / total abundance) at each surface sampling point
+
+###### With circle size scaled by total abundance and fill opacity scaled by dominance share. Use an imagery basemap and a color palette for families. Include legends for both size and opacity.
+
+```{r weed map, message=FALSE, warning=FALSE}
 
 
 # ---- 1) dominant family + dominance share ----
@@ -221,7 +229,11 @@ leaflet(weed_sf) %>%
 
 ```
 
-```{r}
+### Build training table for RF soil-property rasters
+
+###### Based on surface samples, using covariates extracted at soil sampling points.
+
+```{r RF soil-property rasters, message=FALSE, warning=FALSE, eval=FALSE}
 # --- RF soil-property rasters from surface samples ---
 taxa <- c("Common Name","Genus","Species","Family","Life Cycle","Season","Type")
 # surface soil vars you want to model as rasters
@@ -253,4 +265,3 @@ covar_names <- intersect(names(cov_stack), colnames(soil_training))
 covar_names
 
 ```
-
