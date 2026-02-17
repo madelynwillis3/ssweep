@@ -346,11 +346,33 @@ m %>%
 
 
 
+
+
 ### Build training table for RF soil-property rasters
 
 ###### Based on surface samples, using covariates extracted at soil sampling points.
 
 ```{r RF soil-property rasters, message=FALSE, warning=FALSE, eval=FALSE}
+
+#questions:
+  #can any soil properties predict weed species presence/abundance or diversity indices?
+  #what topographic covariates are most predictive of weed species?
+  #are there particular soil nutrients that are associated with particular weed species or diversity indices or weed taxa?
+  #are there particular disturbance covariates that are associated with particular weed species or diversity indices or weed taxa?
+  #are there particular full profile summaries (e.g. root depth) that are associated with particular weed species 
+    #or diversity indices or weed taxa?
+
+
+#plan: pull in disturbance covariate rasters and potentially create rasters such as distance to roads
+#pull in other covariates
+#potentially pull in full profile data (such as root depth data) to use as predictors in RF soil-property rasters (but only if we have enough points with root depth data to make it worthwhile)
+#merge with soil nutrients
+#correlation matrix between taxa, nutrients
+#correlation matrix between disturbance covariates and weed species and indices
+#correlation matrix between full profile summaries and weed species/indicies/nutrients
+
+
+
 # --- RF soil-property rasters from surface samples ---
 taxa <- c("Common Name","Genus","Species","Family","Life Cycle","Season","Type")
 # surface soil vars you want to model as rasters
