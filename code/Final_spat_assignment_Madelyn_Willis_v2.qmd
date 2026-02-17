@@ -1,0 +1,770 @@
+---
+title: "Final_spat_assignment_Madelyn_Willis_v2"
+format: html
+author: "Madelyn Willis"
+---
+
+## 1. Library Load
+
+```{r libraries, message=FALSE, warning=FALSE}
+#libraries
+library(tidyverse)
+library(sf)
+library(ggplot2)
+library(readxl)
+library(terra)
+library(ranger)
+library(viridis)
+library(janitor)
+library(randomForest)
+library(purrr)
+library(reshape2)
+```
+
+## 2. Load data
+
+```{r load data, message=FALSE, warning=FALSE}
+  #load data:
+  
+  #Weed ID data (xlsx):
+  weed_id <- read_csv("../data/SSWEEP_weed_id_count_data.csv")
+    #keep Total sheet but discard other sheets:
+    
+  #surface sampling (15cm) (.csv):
+  surface_sampling <- read_csv("../data/SSWEEP_surface_SP_samples.csv")
+  
+  #covariate stack (.tfs):
+  cov_stack <- rast("../data/covariate_stack_3m.tif")
+
+```
+
+## 3. Data wrangling
+
+```{r data wrangling, message=FALSE, warning=FALSE}
+
+# Soil predictor names 
+soil_vars <- c("lbc", "lbc_eq", "p_h_2", "ca", "k", "mg", "mn", "p", "zn")
+
+#weed id columns are rows under surface sampling row_num column:
+#pivot all columns of weed id:
+weed_id_long <- weed_id %>%
+  pivot_longer( cols = -"...1",
+               names_to = "row_num", 
+               values_to = "weed_count") %>%
+  #rename ...1 to weed_species 
+  rename(weed_species = "...1") 
+
+#join row_num 
+surface_sampling_weed <- surface_sampling %>%
+  left_join(weed_id_long, by = "row_num")
+
+head(surface_sampling_weed)
+```
+
+## 4. Weed Richness 
+
+```{r richness_map, message=FALSE, warning=FALSE}
+
+# calculate richness (number of species present) and total count per point
+weed_richness <- surface_sampling_weed %>%
+  group_by(pedology_lab_id, row_num, x, y, lbc, lbc_eq, p_h_2, ca, k, mg, mn, p, zn) %>%
+  summarize(
+    richness = sum(weed_count > 0, na.rm = TRUE),
+    total_weed_count = sum(weed_count, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+weed_richness_sf <- st_as_sf(weed_richness,
+                             coords = c("x", "y"),
+                             crs = 32613)
+
+# plot richness
+ggplot(weed_richness_sf) +
+  geom_sf(aes(color = richness, size = total_weed_count)) +
+  scale_color_viridis(option = "plasma") +
+  labs(title = "Weed Species Richness and Total Abundance",
+       color = "Richness",
+       size  = "Total count") +
+  theme_minimal()
+```
+
+## 5. Weed presence
+```{r species_summary, message=FALSE, warning=FALSE}
+
+#how many presences per species??
+species_summary <- surface_sampling_weed %>%
+  group_by(weed_species) %>%
+  summarize(
+    n_sites   = n(),
+    n_pres    = sum(weed_count > 0, na.rm = TRUE),
+    prop_pres = n_pres / n_sites
+  ) %>%
+  arrange(desc(n_pres))
+
+
+```
+
+## 6. Top species to model
+
+```{r choose_species, message=FALSE, warning=FALSE}
+# Only model species with at least 10 presences (tweak threshold if needed)
+species_to_model <- species_summary %>%
+  filter(n_pres >= 10) %>%
+  pull(weed_species)
+
+species_to_model
+
+```
+
+## 7. Model performance
+
+```{r run_all_species_models, message=FALSE, warning=FALSE}
+# Named list: one entry per species
+rf_results <- species_to_model %>%
+  set_names() %>%
+  map(~ fit_rf_for_species(.x, data = surface_sampling_weed, soil_vars = soil_vars))
+
+# Drop any NULLs (species that couldn't be modeled)
+rf_results <- rf_results[!vapply(rf_results, is.null, logical(1))]
+
+# Quick model performance table: OOB error and class error
+rf_performance <- map_dfr(
+  rf_results,
+  ~ {
+    mod <- .x$model
+    data.frame(
+      species   = .x$species,
+      OOB_error = mod$err.rate[nrow(mod$err.rate), "OOB"],
+      class_error_absent  = mod$err.rate[nrow(mod$err.rate), "absent"],
+      class_error_present = mod$err.rate[nrow(mod$err.rate), "present"]
+    )
+  }
+)
+
+rf_performance
+
+```
+
+## 8. Correlation Matrix of weed species
+
+```{r}
+# Count number of sites where each species is present
+species_pres_counts <- surface_sampling_weed %>%
+  mutate(presence = weed_count > 0) %>%
+  group_by(weed_species) %>%
+  summarize(
+    n_presences = sum(presence, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+# select weeds that occur more than 10 times in the field 
+min_pres <- 10
+
+species_to_keep <- species_pres_counts %>%
+  filter(n_presences >= min_pres) %>%
+  pull(weed_species)
+
+species_to_keep   # sanity check
+
+#build presence/absence matrix only for kept species
+weed_pa_matrix <- surface_sampling_weed %>%
+  filter(weed_species %in% species_to_keep) %>%
+  mutate(presence = if_else(weed_count > 0, 1L, 0L)) %>%
+  select(row_num, weed_species, presence) %>%
+  distinct() %>%
+  pivot_wider(
+    names_from  = weed_species,
+    values_from = presence,
+    values_fill = 0
+  ) %>%
+  column_to_rownames("row_num") %>%
+  as.matrix()
+
+dim(weed_pa_matrix)
+
+#drop species with zero variance ...just in case
+weed_pa_matrix <- weed_pa_matrix[, apply(weed_pa_matrix, 2, sd) > 0, drop = FALSE]
+
+# Correlation matrix
+weed_cor <- cor(
+  weed_pa_matrix,
+  method = "spearman",
+  use = "pairwise.complete.obs"
+)
+
+# Recompute long form from the filtered correlation matrix
+
+
+weed_cor_long <- melt(
+  weed_cor,
+  varnames = c("Species1", "Species2"),
+  value.name = "rho"
+)
+weed_cor_long <- weed_cor_long %>%
+  mutate(
+    rho = if_else(Species1 == Species2, NA_real_, rho)
+  )
+
+# Get the actual min/max correlation values disregarding NAs
+rho_min <- min(weed_cor_long$rho, na.rm = TRUE)
+rho_max <- max(weed_cor_long$rho, na.rm = TRUE)
+
+legend_breaks <- scales::pretty_breaks(n = 5)(c(rho_min, rho_max))
+
+# Force inclusion of exact min & max
+legend_breaks <- sort(unique(c(rho_min, legend_breaks, rho_max)))
+
+
+ggplot(weed_cor_long,
+       aes(x = Species1, y = Species2, fill = rho)) +
+  geom_tile(color = "white") +
+  scale_fill_viridis(
+    option  = "plasma",
+    limits  = c(rho_min, rho_max),
+    breaks  = legend_breaks,
+    labels  = round(legend_breaks, 2),
+    name    = "Spearman\nρ",
+    na.value = "grey95"
+  ) +
+  coord_fixed() +
+  labs(
+    title    = "Weed species co-occurrence correlation matrix",
+    subtitle = paste("Species with ≥", min_pres, "presence locations"),
+    x = NULL,
+    y = NULL
+  ) +
+  theme_minimal(base_size = 7) +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    axis.text.y = element_text(size = 6),
+    panel.grid  = element_blank(),
+    plot.title  = element_text(face = "bold")
+  )
+
+
+```
+
+## 9. Soil variable importance for weed species, grouped by nutrients
+
+```{r Soil variable importance for weed species}
+# Functional group assignments this was done by looking at the data
+
+functional_groups <- tribble(
+  ~weed_species,         ~functional_group,
+
+  # Group 1: Multi-nutrient responders
+  "Thymeleaf speedwell", "Multi-nutrient ",
+  "Annual Sedge",        "Multi-nutrient ",
+  "Henbit",              "Multi-nutrient ",
+  "Mouse-ear Chickweed", "Multi-nutrient ",
+  "Sleepy silene",       "Multi-nutrient ",
+  "Field Sedge",         "Multi-nutrient ",
+  "Field Pansy",         "Multi-nutrient ",
+  "Corn Speedwell",      "Multi-nutrient ",
+
+  # Group 2: Micronutrient-dominated s
+  "AnnualRye",           "Micronutrient ",
+  "White Clover",        "Micronutrient ",
+  "Crimson Clover",      "Micronutrient ",
+  "Common Chickweed",    "Micronutrient ",
+  "Goosegrass",          "Micronutrient ",
+  "Toadflax",            "Micronutrient ",
+
+  # Group 3: Macronutrient-dominated responders
+  "Bluegrass",           "Macronutrient ",
+  "Field Pennycress",    "Macronutrient ",
+  "Tall Verbena",        "Macronutrient "
+)
+
+# ---- Extract RF variable importance properly ----
+
+varimp_long <- purrr::map_dfr(
+  rf_results,
+  function(res) {
+    mod <- res$model
+
+    # Case 1: ranger::ranger (variable.importance is a named numeric vector)
+    if ("variable.importance" %in% names(mod)) {
+      imp <- mod$variable.importance
+
+      tibble(
+        weed_species  = res$species,
+        soil_variable = names(imp),
+        importance    = as.numeric(imp)
+      )
+
+    # Case 2: randomForest::randomForest (importance is a matrix/data.frame)
+    } else if ("importance" %in% names(mod)) {
+      imp_mat <- as.data.frame(mod$importance)
+
+      tibble(
+        weed_species  = res$species,
+        soil_variable = rownames(imp_mat),
+        # if you used type = "classification", MeanDecreaseGini is a good choice
+        importance    = imp_mat[["MeanDecreaseGini"]]
+      )
+
+    } else {
+      # Fallback: no importance available
+      tibble(
+        weed_species  = res$species,
+        soil_variable = character(0),
+        importance    = numeric(0)
+      )
+    }
+  }
+)
+
+# Optional: set a nice, consistent soil variable order on the x-axis
+varimp_long <- varimp_long %>%
+  mutate(
+    soil_variable = factor(
+      soil_variable,
+      levels = c("lbc", "lbc_eq", "p_h_2", "ca", "k", "mg", "mn", "p", "zn")
+    )
+  )
+
+# Standardize importance within species (0–1)
+varimp_long <- varimp_long %>%
+  group_by(weed_species) %>%
+  mutate(
+    importance_scaled = importance / max(importance, na.rm = TRUE)
+  ) %>%
+  ungroup()
+
+# ---- Join functional groups & handle unassigned species ----
+
+varimp_long <- varimp_long %>%
+  left_join(functional_groups, by = "weed_species") %>%
+  mutate(
+    functional_group = if_else(
+      is.na(functional_group),
+      "Unassigned / mixed",
+      functional_group
+    )
+  )
+
+# Order functional groups meaningfully
+varimp_long$functional_group <- factor(
+  varimp_long$functional_group,
+  levels = c(
+    "Multi-nutrient ",
+    "Micronutrient ",
+    "Macronutrient ",
+    "Unassigned / mixed"
+  )
+)
+
+# Order species within groups by mean importance signal
+species_order <- varimp_long %>%
+  group_by(weed_species, functional_group) %>%
+  summarize(mean_imp = mean(importance_scaled), .groups = "drop") %>%
+  arrange(functional_group, desc(mean_imp)) %>%
+  pull(weed_species)
+
+varimp_long$weed_species <- factor(
+  varimp_long$weed_species,
+  levels = species_order
+)
+
+# soil variable importance by species
+
+p_varimp_heatmap <- ggplot(varimp_long,
+       aes(x = soil_variable,
+           y = weed_species,
+           fill = importance_scaled)) +
+
+  geom_tile(color = "white") +
+
+  scale_fill_viridis_c(
+    option = "magma",
+    name = "Relative\nimportance"
+  ) +
+
+  facet_grid(
+    functional_group ~ .,
+    scales = "free_y",
+    space  = "free_y"
+  ) +
+
+  labs(
+    title    = "Soil drivers of weed species occurrence",
+    subtitle = "Random forest variable importance grouped by response",
+    x        = "Surface soil property",
+    y        = "Weed species"
+  ) +
+
+  theme_minimal(base_size = 10) +
+  theme(
+    panel.grid    = element_blank(),
+    strip.text.y  = element_text(face = "bold"),
+    axis.text.x   = element_text(angle = 45, hjust = 1),
+    plot.title    = element_text(face = "bold")
+  )
+
+p_varimp_heatmap
+
+ggsave("../output/weed_species_soil_variable_importance_heatmap.png",
+       plot   = p_varimp_heatmap,
+       width  = 6,
+       height = 8,
+       units  = "in",
+       dpi    = 300)
+
+
+```
+
+## 10. Weed species probability occurence across field
+
+```{r weed_rf_with_soilrasters, message=FALSE, warning=FALSE}
+
+# clean names (had issues eearlier)
+names(all_cov_stack) <- janitor::make_clean_names(names(all_cov_stack))
+names(all_cov_stack)
+
+
+# Make sure the earlier chunks that build rf_results & rf_performance are run.
+candidate_species <- rf_performance %>%
+  filter(
+    OOB_error < 0.25,
+    class_error_present < 0.85     # at least somewhat able to detect presence
+  ) %>%
+  arrange(OOB_error)
+
+candidate_species
+
+best_species <- candidate_species %>%
+  slice(1) %>%
+  pull(species)
+
+best_species
+
+
+# Build species_data for best_species, using onlypresence + coords 
+species_data <- surface_sampling_weed %>%
+  filter(weed_species == best_species) %>%
+  mutate(
+    presence = factor(
+      if_else(weed_count > 0, "present", "absent"),
+      levels = c("absent", "present")
+    )
+  ) %>%
+  select(row_num, x, y, weed_species, weed_count, presence)
+
+table(species_data$presence)
+
+
+# Reproject to match covariate CRS and extract covs
+
+cov_crs <- crs(all_cov_stack)
+
+species_pts_ll <- st_as_sf(
+  species_data,
+  coords = c("x", "y"),
+  crs = 4326            
+)
+
+species_pts_cov <- st_transform(species_pts_ll, cov_crs)
+
+# Extract ALL covs :
+cov_vals_all <- terra::extract(all_cov_stack, vect(species_pts_cov))
+
+#   presence + weed metadata + raster covariates
+species_data_extended <- species_pts_cov %>%
+  st_drop_geometry() %>%
+  bind_cols(cov_vals_all) %>%
+  clean_names()
+
+names(species_data_extended)
+
+
+# modeling data: presence + numeric raster covs
+
+non_predictors <- c(
+  "row_num",
+  "weed_species", "weed_count",
+  "presence", "id"    
+)
+
+model_dat_raster <- species_data_extended %>%
+  # drop metadata & id
+  select(-any_of(non_predictors)) %>%
+  # put presence back from O.G species_data
+  mutate(presence = species_data$presence) %>%
+  relocate(presence) %>%
+  # keep presence + numeric predictors only
+  select(presence, where(is.numeric)) %>%
+  tidyr::drop_na()
+
+# Name predictors: (again i had issues with this so double making sure)
+predictor_names <- setdiff(names(model_dat_raster), "presence")
+predictor_names
+length(predictor_names)
+
+
+#Fit RF probability model for best_species 
+
+set.seed(123)
+rf_model_raster <- ranger(
+  presence ~ .,
+  data        = model_dat_raster,
+  probability = TRUE,
+  importance  = "impurity",
+  num.trees   = 500
+)
+
+rf_model_raster
+
+# quick in-sample predictions
+pred_pts <- predict(
+  rf_model_raster,
+  data = model_dat_raster,
+  type = "response"
+)$predictions
+
+head(pred_pts)
+
+
+# Prep stack: 
+
+all_cov_stack_for_model <- all_cov_stack[[predictor_names]]
+
+all_cov_stack_for_model
+
+
+#  weed probability raster
+
+rf_prob_fun <- function(model, v) {
+  v_df <- as.data.frame(v)
+  p <- predict(model, data = v_df, type = "response")$predictions
+
+  if (is.matrix(p) || is.data.frame(p)) {
+    if (!is.null(colnames(p)) && "present" %in% colnames(p)) {
+      return(p[, "present"])
+    } else {
+      return(p[, 2])
+    }
+  } else {
+    return(ifelse(p == "present", 1, 0))
+  }
+}
+
+weed_prob_rast <- terra::predict(
+  all_cov_stack_for_model,
+  rf_model_raster,
+  fun      = rf_prob_fun,
+  na.rm    = TRUE,
+  filename = "../output/weed_prob_best_species_with_soil.tif",
+  overwrite = TRUE
+)
+
+weed_prob_rast
+summary(weed_prob_rast)
+
+
+# map predicted probability across the field 
+
+prob_df <- as.data.frame(weed_prob_rast, xy = TRUE, na.rm = TRUE)
+names(prob_df)[3] <- "pred_prob"
+
+ggplot(prob_df, aes(x = x, y = y, fill = pred_prob)) +
+  geom_raster() +
+  coord_equal() +
+  scale_fill_viridis(name = "P(present)", option = "C") +
+  labs(
+    title = paste(
+      "Predicted probability of", best_species,
+      "across field\n(topography + RF-predicted soil covariates)"
+    ),
+    x = "Easting (UTM 17N)", y = "Northing (UTM 17N)"
+  ) +
+  theme_minimal()
+
+```
+
+## 11. Var importance for top weed_species
+
+```{r vip top weed_species}
+
+  vip_raster <- enframe(rf_model_raster$variable.importance,
+                        name  = "predictor",
+                        value = "importance") %>%
+    arrange(desc(importance)) %>%
+    slice_head(n = 10) %>%
+    mutate(
+      predictor      = fct_reorder(predictor, importance),
+      rel_importance = importance / sum(importance) * 100
+    )
+  
+  vip_raster
+  
+  p_vip <- ggplot(vip_raster,
+                  aes(x = predictor,
+                      y = importance,
+                      fill = importance)) +
+    geom_col() +
+    coord_flip() +
+    scale_fill_viridis_c(
+      option    = "plasma",
+      direction = -1,
+      name      = "RF importance"
+    ) +
+    labs(
+      title    = paste("Top 10 predictors for", best_species, "probability model"),
+      x        = "Predictor (topography / RF soil covariate)",
+      y        = "Random forest importance\n(total mean decrease in Gini impurity)",
+      subtitle = "Higher bars = covariates that more strongly reduce node impurity when used for splits"
+    ) +
+    theme_minimal(base_size = 9) +
+    theme(
+      panel.grid.major.y = element_blank(),
+      panel.grid.minor   = element_blank(),
+      plot.title         = element_text(face = "bold"),
+      legend.position    = "right"
+    )
+  
+  p_vip
+
+```
+
+## 12. Comparing wet and dry weed species response
+
+```{r}
+##  Build extended covariate stack: topo/spectral + RF soil rasters
+
+all_cov_stack <- c(cov_stack, soil_rast_stack)
+names(all_cov_stack) <- janitor::make_clean_names(names(all_cov_stack))
+
+# Use ALL layers in the extended stack as candidate predictors
+species_predictors <- names(all_cov_stack)
+
+
+##  env + RF probability for a given species
+
+make_species_response_df <- function(sp_name, cov_stack, predictor_names) {
+  
+  #  Weed data + coords (NO soil point columns to avoid name clashes)
+  sp_raw <- surface_sampling_weed %>%
+    filter(weed_species == sp_name) %>%
+    mutate(
+      presence = factor(
+        if_else(weed_count > 0, "present", "absent"),
+        levels = c("absent", "present")
+      )
+    ) %>%
+    select(weed_species, weed_count, presence, x, y)
+  
+  if (sum(sp_raw$presence == "present") < 5) {
+    warning(paste("Not enough presences for", sp_name))
+    return(NULL)
+  }
+  
+  # Make sf in lon/lat and transform to cov_stack CRS
+  sp_sf_ll  <- st_as_sf(sp_raw, coords = c("x", "y"), crs = 4326)
+  sp_sf_cov <- st_transform(sp_sf_ll, crs(cov_stack))
+  
+  # Extract all covariates from the extended stack
+  cov_vals <- terra::extract(cov_stack, vect(sp_sf_cov))
+  
+  sp_ext <- sp_sf_cov %>%
+    st_drop_geometry() %>%
+    bind_cols(cov_vals) %>%
+    clean_names() %>%
+    mutate(.row = dplyr::row_number())
+  
+  # Build model data with chosen predictors and drop NAs
+  model_dat <- sp_ext %>%
+    select(.row, presence, all_of(predictor_names)) %>%
+    tidyr::drop_na()
+  
+  if (nrow(model_dat) < 10) {
+    warning(paste("Too few usable rows after NA removal for", sp_name))
+    return(NULL)
+  }
+  
+  # Fit RF using topo + soil rasters
+  set.seed(123)
+  rf_mod <- ranger(
+    presence ~ .,
+    data        = model_dat %>% select(-.row),
+    probability = TRUE,
+    importance  = "impurity",
+    num.trees   = 500
+  )
+  
+  # Probability of presence:
+  pred <- predict(
+    rf_mod,
+    data = model_dat,
+    type = "response"
+  )$predictions
+  
+  if (is.matrix(pred)) {
+    model_dat$pred_prob_ext <- pred[, "present", drop = TRUE]
+  } else {
+    model_dat$pred_prob_ext <- ifelse(pred == "present", 1, 0)
+  }
+  
+  # Join back TWI, elev, slope
+  out <- model_dat %>%
+    left_join(
+      sp_ext %>%
+        select(.row, weed_species, weed_count,
+               topographic_wetness_index_usgs, elevation, slope),
+      by     = ".row",
+      suffix = c("_mod", "")  
+    )
+  
+  out
+}
+
+
+## Build the two species data frames  (carolina geranium was already found as a differing response to TWI)
+
+field_sedge_data <- make_species_response_df(
+  sp_name         = "Field Sedge",
+  cov_stack       = all_cov_stack,
+  predictor_names = species_predictors
+)
+
+carolina_data <- make_species_response_df(
+  sp_name         = "Carolina Geranium",
+  cov_stack       = all_cov_stack,
+  predictor_names = species_predictors
+)
+
+str(field_sedge_data)
+str(carolina_data)
+
+
+## TWI vs predicted probability comparison plot
+
+combined_grad <- bind_rows(
+  field_sedge_data  %>% mutate(species = "Field sedge"),
+  carolina_data     %>% mutate(species = "Carolina Geranium")
+) %>%
+  mutate(twi_usgs = topographic_wetness_index_usgs)
+
+ggplot(combined_grad,
+       aes(x = twi_usgs,
+           y = pred_prob_ext,
+           color = species)) +
+  geom_point(alpha = 0.6) +
+  geom_smooth(
+    method    = "loess",
+    se        = TRUE,
+    level     = 0.95,
+    linewidth = 0.9,
+    alpha     = 0.15
+  ) +
+  scale_color_manual(values = c("#0072B2", "#D55E00")) +
+  theme_minimal() +
+  labs(
+    title = "Contrasting weed responses along a wet–dry landscape gradient\n(topographic + RF soil covariates)",
+    x     = "Topographic Wetness Index (TWI, USGS)",
+    y     = "Predicted probability of occurrence",
+    color = "Species"
+  )
+
+```
+

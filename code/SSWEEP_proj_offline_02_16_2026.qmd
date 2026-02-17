@@ -21,6 +21,7 @@ library(reshape2)
 library(leaflet)
 library(scales)
 library(htmltools)
+library(vegan)
 ```
 
 ##### Load data
@@ -510,6 +511,11 @@ cor_small <- cor(num_mat, use="pairwise.complete.obs", method="spearman")
 cor_small
 
 
+```
+
+
+```{r}
+
 tab <- dat_fast %>%
   filter(!is.na(dom_family)) %>%
   count(dist_current, dom_family) %>%
@@ -560,10 +566,6 @@ mat2 <- dat_dom %>%
 chisq2 <- chisq.test(mat2)
 chisq2$p.value
 
-
-
-
-library(vegan)
 # long weed table with counts
 weed_long <- surface_sampling_weed %>%
   transmute(
@@ -642,7 +644,389 @@ adon_outside
 # “Distance to disturbance remained a significant predictor of weed family composition even when analyses were restricted to undisturbed sampling points (PERMANOVA, Bray–Curtis, R² = 0.0277, p = 0.0038), indicating that compositional differences extend beyond disturbance polygons and are consistent with a proximity (edge) effect.”
 ```
 
+
 ```{r}
+set.seed(1234)
+soil_vars <- c("lbc","lbc_eq","p_h_2","ca","k","mg","mn","p","zn")
+
+# long weeds (you already have surface_sampling_weed)
+weed_long2 <- surface_sampling_weed %>%
+  transmute(
+    row_num = as.character(row_num),
+    family  = str_squish(family),
+    genus   = str_squish(genus),
+    weed_count = as.numeric(weed_count)
+  ) %>%
+  filter(!is.na(weed_count))
+
+# point-level soil table
+soil_point <- surface_sampling %>%
+  transmute(row_num = as.character(row_num),
+            across(all_of(soil_vars), as.numeric))
+
+# family abundance per point
+fam_y <- weed_long2 %>%
+  group_by(row_num, family) %>%
+  summarise(y = sum(weed_count, na.rm = TRUE), .groups="drop") %>%
+  filter(!is.na(family), family != "")
+
+# genus abundance per point
+gen_y <- weed_long2 %>%
+  group_by(row_num, genus) %>%
+  summarise(y = sum(weed_count, na.rm = TRUE), .groups="drop") %>%
+  filter(!is.na(genus), genus != "")
+min_points <- 10   # only model taxa present in >=10 points
+num_trees  <- 500  # bump to 1000 later if you want
+
+fit_rf_by_taxon <- function(y_tbl, taxon_col, soil_df) {
+  taxon_sym <- rlang::sym(taxon_col)
+
+  eligible <- y_tbl %>%
+    group_by(!!taxon_sym) %>%
+    summarise(n_pts = sum(y > 0), .groups="drop") %>%
+    filter(n_pts >= min_points) %>%
+    pull(!!taxon_sym)
+
+  y_tbl %>%
+    filter((!!taxon_sym) %in% eligible) %>%
+    group_split(!!taxon_sym) %>%
+    purrr::map(function(d) {
+      taxon_name <- d[[taxon_col]][1]
+
+      dat <- soil_df %>%
+        left_join(d %>% select(row_num, y), by = "row_num") %>%
+        mutate(y = replace_na(y, 0))
+
+      # ranger regression RF
+      mod <- ranger::ranger(
+        y ~ .,
+        data = dat %>% select(-row_num),
+        num.trees = num_trees,
+        importance = "permutation",
+        respect.unordered.factors = "order",
+        seed = 1
+      )
+
+      imp <- mod$variable.importance
+
+      tibble(
+        taxon = taxon_name,
+        soil_variable = names(imp),
+        importance = as.numeric(imp)
+      )
+    }) %>%
+    bind_rows()
+}
+
+varimp_family <- fit_rf_by_taxon(fam_y, "family", soil_point)
+varimp_genus  <- fit_rf_by_taxon(gen_y, "genus",  soil_point)
+soil_labels <- c(
+  lbc    = "LBC ",
+  lbc_eq = "LBCeq ",
+  p_h_2  = "pH",
+  ca     = "Ca ",
+  k      = "K ",
+  mg     = "Mg ",
+  mn     = "Mn ",
+  p      = "P ",
+  zn     = "Zn "
+)
+
+soil_vars <- names(soil_labels)  # keeps order
+
+plot_varimp_heat_raw <- function(varimp_df, title_txt, digits = 3) {
+
+  dfp <- varimp_df %>%
+    mutate(
+      soil_variable = factor(soil_variable, levels = soil_vars),
+      soil_label    = factor(soil_labels[as.character(soil_variable)], levels = soil_labels),
+      label = if_else(is.na(importance), "", format(round(importance, digits), nsmall = digits)),
+      label_col = if_else(!is.na(importance) & importance < 35, "white", "black")
+    ) %>%
+    group_by(taxon) %>%
+    mutate(taxon_mean = mean(abs(importance), na.rm = TRUE)) %>%  # order by overall signal
+    ungroup() %>%
+    mutate(taxon = reorder(taxon, taxon_mean))
+
+  ggplot(dfp, aes(x = soil_label, y = taxon, fill = importance)) +
+    geom_tile(color = "white") +
+    geom_text(aes(label = label, color = label_col), size = 2.8) +
+    scale_color_identity() +
+    scale_fill_viridis_c(option = "magma", name = "Permutation\nimportance") +
+    labs(
+      title = title_txt,
+      subtitle = "Raw (signed) permutation importance from ranger (all cells labeled).",
+      x = "Surface soil property",
+      y = NULL
+    ) +
+    theme_minimal(base_size = 10) +
+    theme(
+      panel.grid = element_blank(),
+      axis.text.x = element_text(angle = 45, hjust = 1),
+      plot.title = element_text(face = "bold")
+    )
+}
+
+p_fam_raw <- plot_varimp_heat_raw(varimp_family, "Soil drivers of weed FAMILY abundance (raw importance)", digits = 3)
+p_gen_raw <- plot_varimp_heat_raw(varimp_genus,  "Soil drivers of weed GENUS abundance (raw importance)",  digits = 3)
+
+p_fam_raw
+p_gen_raw
+
+
+```
+```{r spearman correlation plot, message=FALSE, warning=FALSE, eval = FALSE}
+
+make_taxon_soil_corplot <- function(surface_sampling_weed, surface_sampling,
+                                    taxon_col = c("genus","family"),
+                                    title_txt = NULL,
+                                    min_pts = 8,
+                                    digits = 2) {
+
+  taxon_col <- match.arg(taxon_col)
+
+  # 1) point-level taxon abundance wide
+  tax_wide <- surface_sampling_weed %>%
+    transmute(
+      row_num = as.character(row_num),
+      taxon = str_squish(.data[[taxon_col]]),
+      weed_count = as.numeric(weed_count)
+    ) %>%
+    filter(!is.na(taxon), taxon != "", !is.na(weed_count)) %>%
+    group_by(row_num, taxon) %>%
+    summarise(abund = sum(weed_count, na.rm = TRUE), .groups = "drop") %>%
+    pivot_wider(names_from = taxon, values_from = abund, values_fill = 0)
+
+  # 2) soil table
+  soil_point <- surface_sampling %>%
+    transmute(row_num = as.character(row_num),
+              across(all_of(soil_vars), as.numeric))
+
+  dat <- soil_point %>%
+    inner_join(tax_wide, by = "row_num")
+
+  taxon_cols <- setdiff(names(dat), c("row_num", soil_vars))
+
+  # 3) restrict to taxa present in >= min_pts points
+  n_pts <- dat %>%
+    summarise(across(all_of(taxon_cols), ~sum(.x > 0, na.rm = TRUE))) %>%
+    pivot_longer(everything(), names_to = "taxon", values_to = "n_pts")
+
+  keep_taxa <- n_pts %>%
+    filter(n_pts >= min_pts) %>%
+    pull(taxon)
+
+  if (length(keep_taxa) == 0) stop("No taxa meet min_pts threshold. Lower min_pts.")
+
+  # 4) compute Spearman rho for each (taxon, soil_var)
+  cor_long <- expand_grid(taxon = keep_taxa, soil_variable = soil_vars) %>%
+    rowwise() %>%
+    mutate(
+      rho = suppressWarnings(
+        cor(dat[[taxon]], dat[[soil_variable]],
+            method = "spearman", use = "pairwise.complete.obs")
+      )
+    ) %>%
+    ungroup()
+
+  # 5) sort taxa by mean absolute correlation strength (highest -> lowest)
+  tax_order <- cor_long %>%
+    group_by(taxon) %>%
+    summarise(mean_abs_rho = mean(abs(rho), na.rm = TRUE), .groups = "drop") %>%
+    arrange(desc(mean_abs_rho)) %>%
+    pull(taxon)
+
+  # 6) set color limits to observed min/max rho (after filtering)
+  lims <- range(cor_long$rho, na.rm = TRUE)
+
+  # 7) plot
+  if (is.null(title_txt)) {
+    title_txt <- paste0(str_to_title(taxon_col), " abundance vs soil nutrients")
+  }
+
+  cor_long %>%
+  mutate(
+  soil_label = factor(soil_labels[soil_variable], levels = soil_labels),
+  taxon = factor(taxon, levels = tax_order),
+  label = if_else(is.na(rho), "", sprintf(paste0("%.", digits, "f"), rho)),
+  label_col = if_else(!is.na(rho) & rho < 0, "white", "black"))%>%
+ggplot(aes(x = soil_label, y = taxon, fill = rho)) +
+  geom_tile(color = "white") +
+  geom_text(aes(label = label, color = label_col), size = 2.8) +
+  scale_color_identity() +
+  scale_fill_viridis_c(option = "magma", name = "Spearman\nρ", limits = lims) +
+    labs(
+      title = title_txt,
+      subtitle = paste0(
+        "Filtered to taxa present in ≥", min_pts, " points. ",
+        "Color scale set to observed min/max ρ."
+      ),
+      x = "Surface soil property",
+      y = str_to_title(taxon_col)
+    ) +
+    theme_minimal(base_size = 10) +
+    theme(
+      panel.grid = element_blank(),
+      axis.text.x = element_text(angle = 45, hjust = 1),
+      plot.title = element_text(face = "bold")
+    )
+}
+
+p_cor_gen <- make_taxon_soil_corplot(
+  surface_sampling_weed = surface_sampling_weed,
+  surface_sampling      = surface_sampling,
+  taxon_col = "genus",
+  title_txt = "Genus abundance vs soil nutrients (Spearman ρ)",
+  min_pts = 8,
+  digits = 2
+)
+p_cor_gen
+p_cor_fam <- make_taxon_soil_corplot(
+  surface_sampling_weed = surface_sampling_weed,
+  surface_sampling      = surface_sampling,
+  taxon_col = "family",
+  title_txt = "Family abundance vs soil nutrients (Spearman ρ)",
+  min_pts = 8,
+  digits = 2
+)
+p_cor_fam
+
+
+
+```
+```{r FDR correction, message=FALSE, warning=FALSE, eval = FALSE}
+#FDR correction:
+make_taxon_soil_corplot_fdr <- function(surface_sampling_weed, surface_sampling,
+                                        soil_vars, soil_labels,
+                                        taxon_col = c("genus","family"),
+                                        min_pts = 8,
+                                        digits = 2,
+                                        alpha = 0.10,
+                                        show = c("fdr_star","fdr_only","all")) {
+
+  show <- match.arg(show)
+  taxon_col <- match.arg(taxon_col)
+
+  # 1) point-level taxon abundance wide
+  tax_wide <- surface_sampling_weed %>%
+    transmute(
+      row_num = stringr::str_squish(as.character(row_num)),
+      taxon   = stringr::str_squish(.data[[taxon_col]]),
+      weed_count = readr::parse_number(as.character(weed_count))
+    ) %>%
+    filter(!is.na(taxon), taxon != "", !is.na(weed_count)) %>%
+    group_by(row_num, taxon) %>%
+    summarise(abund = sum(weed_count, na.rm = TRUE), .groups = "drop") %>%
+    tidyr::pivot_wider(names_from = taxon, values_from = abund, values_fill = 0)
+
+  # 2) soil table
+  soil_point <- surface_sampling %>%
+    transmute(
+      row_num = stringr::str_squish(as.character(row_num)),
+      across(all_of(soil_vars), ~ readr::parse_number(as.character(.x)))
+    )
+
+  dat <- dplyr::inner_join(soil_point, tax_wide, by = "row_num")
+  if (nrow(dat) == 0) stop("Join produced 0 rows. Check row_num formatting.")
+
+  taxon_cols <- setdiff(names(dat), c("row_num", soil_vars))
+
+  # keep taxa present in >= min_pts points
+  keep_taxa <- dat %>%
+    summarise(across(all_of(taxon_cols), ~sum(.x > 0, na.rm = TRUE))) %>%
+    pivot_longer(everything(), names_to = "taxon", values_to = "n_pts") %>%
+    filter(n_pts >= min_pts) %>%
+    pull(taxon)
+
+  if (length(keep_taxa) == 0) stop("No taxa meet min_pts threshold. Lower min_pts.")
+
+  # Spearman-safe helper
+  safe_spearman <- function(x, y) {
+    ok <- is.finite(x) & is.finite(y)
+    x <- x[ok]; y <- y[ok]
+    if (length(x) < 3) return(c(rho = NA_real_, p = NA_real_))
+    if (length(unique(x)) < 2 || length(unique(y)) < 2) return(c(rho = NA_real_, p = NA_real_))
+    ct <- suppressWarnings(stats::cor.test(x, y, method = "spearman", exact = FALSE))
+    c(rho = unname(ct$estimate), p = ct$p.value)
+  }
+
+  # compute rho + p
+  cor_long <- tidyr::expand_grid(taxon = keep_taxa, soil_variable = soil_vars) %>%
+    rowwise() %>%
+    mutate(
+      tmp = list(safe_spearman(dat[[taxon]], dat[[soil_variable]])),
+      rho = tmp[[1]]["rho"],
+      p   = tmp[[1]]["p"]
+    ) %>%
+    ungroup() %>%
+    mutate(
+      p_fdr  = p.adjust(p, method = "BH"),
+      sig_fdr = !is.na(p_fdr) & p_fdr < alpha
+    )
+
+  # order taxa by mean |rho|
+  tax_order <- cor_long %>%
+    group_by(taxon) %>%
+    summarise(mean_abs_rho = mean(abs(rho), na.rm = TRUE), .groups = "drop") %>%
+    arrange(desc(mean_abs_rho)) %>%
+    pull(taxon)
+
+  # color limits to observed min/max rho (ignore NA)
+  lims <- range(cor_long$rho, na.rm = TRUE)
+
+  # build plot table
+  plot_df <- cor_long %>%
+    mutate(
+      soil_label = factor(soil_labels[soil_variable], levels = soil_labels),
+      taxon      = factor(taxon, levels = tax_order),
+      lab = if_else(is.na(rho), "", sprintf(paste0("%.", digits, "f"), rho)),
+      lab = if (show == "fdr_star") if_else(sig_fdr, paste0(lab, "*"), lab) else lab,
+      lab = if (show == "fdr_only") if_else(sig_fdr, lab, "") else lab,
+      label_col = if_else(!is.na(rho) & rho < 0, "white", "black")
+    )
+
+  p <- ggplot(plot_df, aes(x = soil_label, y = taxon, fill = rho)) +
+    geom_tile(color = "white") +
+    geom_text(aes(label = lab, color = label_col), size = 2.8) +
+    scale_color_identity() +
+    scale_fill_viridis_c(option = "magma", name = "Spearman\nρ", limits = lims) +
+    labs(
+      title = paste0(stringr::str_to_title(taxon_col), " abundance vs soil nutrients (Spearman ρ)"),
+      subtitle = paste0(
+        "FDR (BH) α=", alpha, ". Filtered to taxa present in ≥", min_pts, " points. ",
+        if (show == "fdr_star") "* = FDR-significant." else if (show == "fdr_only") "Labels shown only if FDR-significant." else ""
+      ),
+      x = "Surface soil property",
+      y = stringr::str_to_title(taxon_col)
+    ) +
+    theme_minimal(base_size = 10) +
+    theme(
+      panel.grid = element_blank(),
+      axis.text.x = element_text(angle = 45, hjust = 1),
+      plot.title = element_text(face = "bold")
+    )
+
+  list(plot = p, table = cor_long)
+}
+res_gen <- make_taxon_soil_corplot_fdr(surface_sampling_weed, surface_sampling,
+                                      soil_vars, soil_labels,
+                                      taxon_col="genus", min_pts=8, alpha=0.05, show="fdr_star")
+res_gen$plot
+
+res_fam <- make_taxon_soil_corplot_fdr(surface_sampling_weed, surface_sampling,
+                                      soil_vars, soil_labels,
+                                      taxon_col="family", min_pts=8, alpha=0.05, show="fdr_star")
+res_fam$plot
+
+#“no associations survived FDR at 0.05; patterns interpreted descriptively.”
+
+```
+
+
+
+
+
+```{r correlation matrix, message=FALSE, warning=FALSE, eval=FALSE}
 
 # pick the index columns you actually want
 idx_cols <- c(
