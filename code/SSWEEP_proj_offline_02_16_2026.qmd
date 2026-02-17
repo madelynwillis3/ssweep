@@ -169,7 +169,7 @@ ab_vals <- c(
   quantile(weed_sf$total_abundance, 0.95, na.rm = TRUE)
 ) %>% as.numeric() %>% unique() %>% sort()
 
-# convert those abundance values to radii using the SAME mapping used for points
+# convert those abundance values to radii using the SAME mapping you used for points
 rad_fun <- function(x) {
   rescale(x, to = c(4, 18),
           from = c(min(weed_sf$total_abundance, na.rm=TRUE),
@@ -229,9 +229,7 @@ leaflet(weed_sf) %>%
 
 ```
 
-### Map of diversity indices across surface sampling points
-
-```{r index map, warning=FALSE}
+```{r}
 
 # re-read sheet 1 cleanly (so we definitely have the bottom rows)
 ssweep <- read_excel("../data/SSWEEP_data_with_tax_and_indices_02_2026.xlsx",
@@ -240,7 +238,7 @@ ssweep <- read_excel("../data/SSWEEP_data_with_tax_and_indices_02_2026.xlsx",
 # grid columns are like 1A, 22C, 93H, etc.
 grid_cols <- names(ssweep)[str_detect(names(ssweep), "^\\d+[A-Za-z]+$")]
 
-# rows at the bottom of sheet 1
+# rows at the bottom of sheet 1 that you want
 idx_rows <- c(
   "Simpson's diversity index",
   "Shannon Weiner diversity index",
@@ -259,7 +257,7 @@ idx_by_point <- ssweep %>%
   pivot_wider(names_from = idx_name, values_from = value) %>%
   clean_names()
 
-# join onto surface points (now have indices per point)
+# join onto your surface points (now you have indices per point)
 surface_sampling_idx <- surface_sampling %>%
   mutate(row_num = as.character(row_num)) %>%
   left_join(idx_by_point, by = "row_num") %>%
@@ -268,8 +266,6 @@ surface_sampling_idx <- surface_sampling %>%
 head(surface_sampling_idx)
 
 ```
-
-###### Plotting indices
 
 ```{r}
 #plot leaflet of shannon index across surface sampling points:
@@ -284,7 +280,7 @@ idx_cols <- names(idx_sf) %>%
   keep(~ str_detect(.x, "simpson|shannon|pielou|evenness|berger|parker|dominance"))
 
 idx_cols
-
+# (sanity check) if you want to force a specific order:
 idx_cols <- idx_cols[idx_cols %in% c(
   "simpsons_diversity_index",
   "shannon_weiner_diversity_index",
@@ -348,6 +344,8 @@ m %>%
   hideGroup(idx_cols[-1])  # show first index layer by default
 ```
 
+
+
 ### Build training table for RF soil-property rasters
 
 ###### Based on surface samples, using covariates extracted at soil sampling points.
@@ -355,11 +353,11 @@ m %>%
 ```{r RF soil-property rasters, message=FALSE, warning=FALSE, eval=FALSE}
 # --- RF soil-property rasters from surface samples ---
 taxa <- c("Common Name","Genus","Species","Family","Life Cycle","Season","Type")
-# surface soil vars  to model as rasters
+# surface soil vars you want to model as rasters
 soil_vars <- c("lbc", "lbc_eq", "p_h_2", "ca", "k", "mg", "mn", "p", "zn")
 
 # 1. Build soil training table: soil ~ covariates
-#    Assume x/y are in lon/lat (as in fixed weed code)
+#    Assume x/y are in lon/lat (as in your fixed weed code)
 soil_pts_ll <- surface_sampling %>%
   select(row_num, x, y, all_of(soil_vars)) %>%
   st_as_sf(coords = c("x", "y"), crs = 4326)
