@@ -512,6 +512,202 @@ cor_small
 
 
 ```
+```{r}
+soil_vars <- c("lbc","lbc_eq","p_h_2","ca","k","mg","mn","p","zn")
+
+df_long_soil <- dat_fast %>%
+  mutate(dist_current = as.factor(dist_current)) %>%
+  pivot_longer(all_of(soil_vars), names_to="soil_var", values_to="value") %>%
+  mutate(value = as.numeric(value))
+
+# p-values per facet
+p_soil <- df_long_soil %>%
+  filter(!is.na(value), !is.na(dist_current)) %>%
+  group_by(soil_var) %>%
+  summarise(
+    n0 = sum(dist_current == "0"),
+    n1 = sum(dist_current == "1"),
+    p_value = ifelse(n0 >= 2 & n1 >= 2,
+      suppressWarnings(wilcox.test(value ~ dist_current)$p.value),
+      NA_real_
+    ),
+    y_pos = max(value, na.rm = TRUE) * 1.05,   # where to print label
+    .groups="drop"
+  ) %>%
+  mutate(
+    p_lab = ifelse(is.na(p_value), "p = NA",
+                   paste0("Wilcoxon p = ", signif(p_value, 3)))
+  )
+p_soil <- p_soil %>%
+  mutate(p_bh = p.adjust(p_value, method = "BH"),
+         p_lab = ifelse(is.na(p_value), "p = NA",
+                        paste0("p=", signif(p_value,3),
+                               " | BH=", signif(p_bh,3))))
+
+ggplot(df_long_soil, aes(x = dist_current, y = value)) +
+  geom_boxplot(outlier.alpha = 0.3) +
+  geom_jitter(width = 0.15, alpha = 0.3) +
+  facet_wrap(~ soil_var, scales = "free_y") +
+  geom_text(
+    data = p_soil,
+    aes(x = 1.5, y = y_pos, label = p_lab),
+    inherit.aes = FALSE,
+    size = 3
+  ) +
+  labs(x = "Currently disturbed (0/1)", y = "Soil value") +
+  theme_minimal()
+
+taxa_vars <- c("weed_total_abundance","weed_species_richness",
+               "weed_family_richness","dom_family_share")
+
+df_long_taxa <- dat_fast %>%
+  mutate(dist_current = as.factor(dist_current)) %>%
+  pivot_longer(all_of(taxa_vars), names_to="taxa_var", values_to="value") %>%
+  mutate(value = as.numeric(value))
+
+p_taxa <- df_long_taxa %>%
+  filter(!is.na(value), !is.na(dist_current)) %>%
+  group_by(taxa_var) %>%
+  summarise(
+    n0 = sum(dist_current == "0"),
+    n1 = sum(dist_current == "1"),
+    p_value = ifelse(n0 >= 2 & n1 >= 2,
+      suppressWarnings(wilcox.test(value ~ dist_current)$p.value),
+      NA_real_
+    ),
+    y_pos = max(value, na.rm = TRUE) * 1.05,
+    .groups="drop"
+  ) %>%
+  mutate(p_lab = ifelse(is.na(p_value), "p = NA",
+                        paste0("Wilcoxon p = ", signif(p_value, 3))))
+
+ggplot(df_long_taxa, aes(x = dist_current, y = value)) +
+  geom_boxplot(outlier.alpha = 0.3) +
+  geom_jitter(width = 0.15, alpha = 0.3) +
+  facet_wrap(~ taxa_var, scales = "free_y") +
+  geom_text(
+    data = p_taxa,
+    aes(x = 1.5, y = y_pos, label = p_lab),
+    inherit.aes = FALSE,
+    size = 3
+  ) +
+  labs(x = "Currently disturbed (0/1)", y = "Taxa summary") +
+  theme_minimal()
+## counts of dominant family by disturbance
+tab <- dat_fast %>%
+  filter(!is.na(dom_family), dom_family != "") %>%
+  count(dist_current, dom_family) %>%
+  tidyr::pivot_wider(names_from = dist_current, values_from = n, values_fill = 0)
+
+mat <- as.matrix(tab[, -1])
+rownames(mat) <- tab$dom_family
+
+# Fisher (robust for small counts)
+fisher.test(mat)
+
+# If counts are all decent, chi-square is fine:
+chisq.test(mat)   # watch for the "approximation may be incorrect" warning
+
+# family abundance per point
+fam_point <- surface_sampling_weed %>%
+  transmute(
+    row_num = as.character(row_num),
+    family  = str_squish(family),
+    weed_count = as.numeric(weed_count)
+  ) %>%
+  filter(!is.na(family), family != "", !is.na(weed_count)) %>%
+  group_by(row_num, family) %>%
+  summarise(fam_abund = sum(weed_count, na.rm = TRUE), .groups="drop")
+
+# join disturbance
+fam_dist <- soil_dist %>%
+  transmute(row_num = as.character(row_num),
+            dist_current = as.factor(dist_current)) %>%
+  left_join(fam_point, by = "row_num") %>%
+  mutate(fam_abund = replace_na(fam_abund, 0))
+
+# optional: keep only families present in >= N points (otherwise p-values are junk)
+min_pts <- 10
+keep_fam <- fam_dist %>%
+  group_by(family) %>%
+  summarise(n_pts = sum(fam_abund > 0), .groups="drop") %>%
+  filter(n_pts >= min_pts) %>%
+  pull(family)
+
+fam_dist2 <- fam_dist %>% filter(family %in% keep_fam)
+
+# p-values per family (Wilcoxon)
+p_fam <- fam_dist2 %>%
+  group_by(family) %>%
+  summarise(
+    n0 = sum(dist_current == "0"),
+    n1 = sum(dist_current == "1"),
+    p_value = ifelse(n0 >= 2 & n1 >= 2,
+                     suppressWarnings(wilcox.test(fam_abund ~ dist_current)$p.value),
+                     NA_real_),
+    y_pos = max(fam_abund, na.rm=TRUE) * 1.05,
+    .groups="drop"
+  ) %>%
+  mutate(
+    p_bh = p.adjust(p_value, method = "BH"),  # optional
+    p_lab = ifelse(is.na(p_value), "p=NA",
+                   paste0("p=", signif(p_value,3),
+                          " | BH=", signif(p_bh,3)))
+  )
+
+ggplot(fam_dist2, aes(x = dist_current, y = fam_abund)) +
+  geom_boxplot(outlier.alpha = 0.3) +
+  geom_jitter(width = 0.15, alpha = 0.25) +
+  facet_wrap(~ family, scales = "free_y") +
+  geom_text(data = p_fam,
+            aes(x = 1.5, y = y_pos, label = p_lab),
+            inherit.aes = FALSE, size = 3) +
+  labs(x = "Currently disturbed (0/1)", y = "Family abundance") +
+  theme_minimal()
+
+
+
+# 1) family abundance per point
+fam_point <- surface_sampling_weed %>%
+  transmute(
+    row_num = as.character(row_num),
+    family  = str_squish(family),
+    weed_count = as.numeric(weed_count)
+  ) %>%
+  filter(!is.na(family), family != "", !is.na(weed_count)) %>%
+  group_by(row_num, family) %>%
+  summarise(fam_abund = sum(weed_count, na.rm = TRUE), .groups = "drop")
+
+# 2) join distance to disturbance
+fam_dist <- dat_fast %>%
+  transmute(
+    row_num = as.character(row_num),
+    dist_to_current_m = as.numeric(dist_to_current_m)
+  ) %>%
+  left_join(fam_point, by = "row_num") %>%
+  mutate(fam_abund = replace_na(fam_abund, 0)) %>%
+  filter(!is.na(dist_to_current_m))
+
+# 3) (recommended) keep only families present in enough points
+min_pts <- 10
+keep_fam <- fam_dist %>%
+  group_by(family) %>%
+  summarise(n_pts = sum(fam_abund > 0), .groups="drop") %>%
+  filter(n_pts >= min_pts) %>%
+  pull(family)
+
+fam_dist2 <- fam_dist %>% filter(family %in% keep_fam)
+
+# 4) plot
+ggplot(fam_dist2, aes(x = dist_to_current_m, y = fam_abund)) +
+  geom_point(alpha = 0.35) +
+  geom_smooth(method = "loess", se = FALSE) +
+  facet_wrap(~ family, scales = "free_y") +
+  labs(x = "Distance to current disturbance (m)", y = "Family abundance") +
+  theme_minimal()
+
+```
+
 
 
 ```{r}
