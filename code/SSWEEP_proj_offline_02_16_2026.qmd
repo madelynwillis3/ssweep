@@ -348,11 +348,14 @@ m %>%
 
 
 
+
+
+
 ### Build training table for RF soil-property rasters
 
 ###### Based on surface samples, using covariates extracted at soil sampling points.
 
-```{r RF soil-property rasters, message=FALSE, warning=FALSE, eval=FALSE}
+```{r RF soil-property rasters, message=FALSE, warning=FALSE}
 
 #questions:
   #can any soil properties predict weed species presence/abundance or diversity indices?
@@ -373,34 +376,306 @@ m %>%
 
 
 
-# --- RF soil-property rasters from surface samples ---
-taxa <- c("Common Name","Genus","Species","Family","Life Cycle","Season","Type")
-# surface soil vars you want to model as rasters
-soil_vars <- c("lbc", "lbc_eq", "p_h_2", "ca", "k", "mg", "mn", "p", "zn")
+# Disturbance raster (UTM 17N)
+current_dist <- rast("../data/disturbance/currently_dist_binary.tif")
 
-# 1. Build soil training table: soil ~ covariates
-#    Assume x/y are in lon/lat (as in your fixed weed code)
+# Recode categorical -> binary (you already did this)
+lev <- levels(current_dist)[[1]]
+id_col <- names(lev)[1]
+yes_id <- lev[[id_col]][lev$CurrentDis == "Yes"]
+current_dist_bin <- ifel(current_dist == yes_id, 1, 0)
+names(current_dist_bin) <- "dist_current"
+
+# OPTIONAL: distance-to-disturbance raster (meters)
+# (distance from each cell to nearest disturbed cell)
+dist_to_dist <- distance(current_dist_bin, value = 1)
+names(dist_to_dist) <- "dist_to_current_m"
+
+# --- disturbance rasters already made ---
+# current_dist_bin (0/1) and dist_to_dist (meters)
+
+# points in raster CRS
 soil_pts_ll <- surface_sampling %>%
-  select(row_num, x, y, all_of(soil_vars)) %>%
-  st_as_sf(coords = c("x", "y"), crs = 4326)
+  select(row_num, x, y, lbc, lbc_eq, p_h_2, ca, k, mg, mn, p, zn) %>%
+  st_as_sf(coords = c("x","y"), crs = 4326)
 
+soil_pts_utm <- st_transform(soil_pts_ll, crs(current_dist_bin))
 
-# transform to covariate CRS (same as cov_stack)
-soil_pts_cov <- st_transform(soil_pts_ll, crs(cov_stack))
+# extract disturbance values
+dist_vals <- terra::extract(current_dist_bin, vect(soil_pts_utm)) %>% select(-ID)
+dist_dvals <- terra::extract(dist_to_dist, vect(soil_pts_utm)) %>% select(-ID)
 
-# extract covariates at soil points
-soil_cov_vals <- terra::extract(cov_stack, vect(soil_pts_cov))
-
-soil_training <- soil_pts_cov %>%
+soil_dist <- soil_pts_utm %>%
   st_drop_geometry() %>%
-  bind_cols(soil_cov_vals) %>%
+  bind_cols(dist_vals, dist_dvals) %>%
   clean_names()
 
-# clean cov_stack names the same way (critical!)
-names(cov_stack) <- janitor::make_clean_names(names(cov_stack))
 
-# predictors available in BOTH soil_training and cov_stack
-covar_names <- intersect(names(cov_stack), colnames(soil_training))
-covar_names
+
+
+# current_dist_bin is 0/1
+# make a target raster: 1 where disturbed, NA elsewhere
+target <- ifel(current_dist_bin == 1, 1, NA)
+
+# distance to nearest target cell (meters, since UTM)
+dist_to_dist <- distance(target)
+names(dist_to_dist) <- "dist_to_current_m"
+
+plot(dist_to_dist)
+global(dist_to_dist, "range", na.rm=TRUE)
+dist_dvals <- terra::extract(dist_to_dist, vect(soil_pts_utm)) %>% select(-ID)
+
+soil_dist <- soil_pts_utm %>%
+  st_drop_geometry() %>%
+  bind_cols(dist_vals, dist_dvals) %>%
+  janitor::clean_names()
 
 ```
+
+```{r}
+weed_long <- surface_sampling_weed %>%
+  transmute(
+    row_num = as.character(row_num),
+    family = str_squish(family),
+    weed_count = as.numeric(weed_count)
+  ) %>%
+  filter(!is.na(weed_count))
+
+taxa_point <- weed_long %>%
+  group_by(row_num) %>%
+  summarise(
+    weed_total_abundance = sum(weed_count, na.rm=TRUE),
+    weed_species_richness = sum(weed_count > 0, na.rm=TRUE),
+    weed_family_richness = n_distinct(family[weed_count > 0]),
+    .groups="drop"
+  )
+
+dom_family <- weed_long %>%
+  group_by(row_num, family) %>%
+  summarise(fam_abund = sum(weed_count, na.rm=TRUE), .groups="drop") %>%
+  group_by(row_num) %>%
+  slice_max(fam_abund, n=1, with_ties=FALSE) %>%
+  ungroup() %>%
+  left_join(taxa_point, by="row_num") %>%
+  mutate(dom_family_share = fam_abund / pmax(weed_total_abundance, 1)) %>%
+  select(row_num, dom_family = family, dom_family_abund = fam_abund, dom_family_share,
+         weed_total_abundance, weed_species_richness, weed_family_richness)
+dat_fast <- soil_dist %>%
+  mutate(row_num = as.character(row_num)) %>%
+  left_join(dom_family, by="row_num")
+
+glimpse(dat_fast)
+soil_vars <- c("lbc","lbc_eq","p_h_2","ca","k","mg","mn","p","zn")
+
+dat_fast %>%
+  pivot_longer(all_of(soil_vars), names_to="soil_var", values_to="value") %>%
+  ggplot(aes(x = factor(dist_current), y = value)) +
+  geom_boxplot(outlier.alpha = 0.3) +
+  geom_jitter(width = 0.15, alpha = 0.3) +
+  facet_wrap(~ soil_var, scales = "free_y") +
+  labs(x = "Currently disturbed (0/1)", y = "Soil value") +
+  theme_minimal()
+dat_fast %>%
+  pivot_longer(all_of(soil_vars), names_to="soil_var", values_to="value") %>%
+  ggplot(aes(x = dist_to_current_m, y = value)) +
+  geom_point(alpha = 0.35) +
+  geom_smooth(method = "loess", se = FALSE) +
+  facet_wrap(~ soil_var, scales = "free_y") +
+  labs(x = "Distance to current disturbance (m)", y = "Soil value") +
+  theme_minimal()
+taxa_vars <- c("weed_total_abundance","weed_species_richness","weed_family_richness","dom_family_share")
+
+dat_fast %>%
+  pivot_longer(all_of(taxa_vars), names_to="taxa_var", values_to="value") %>%
+  ggplot(aes(x = factor(dist_current), y = value)) +
+  geom_boxplot(outlier.alpha = 0.3) +
+  geom_jitter(width = 0.15, alpha = 0.3) +
+  facet_wrap(~ taxa_var, scales = "free_y") +
+  labs(x = "Currently disturbed (No = 0/Yes = 1)", y = "Taxa summary") +
+  theme_minimal()
+dat_fast %>%
+  count(dist_current, dom_family) %>%
+  group_by(dist_current) %>%
+  mutate(pct = n / sum(n)) %>%
+  ggplot(aes(x = factor(dist_current), y = pct, fill = dom_family)) +
+  geom_col() +
+  scale_y_continuous(labels = scales::percent) +
+  labs(x = "Currently disturbed (No = 0/Yes = 1)", y = "Proportion of points", fill = "Dominant family") +
+  theme_minimal()
+num_mat <- dat_fast %>%
+  select(dist_current, dist_to_current_m, all_of(soil_vars), all_of(taxa_vars)) %>%
+  mutate(across(everything(), as.numeric))
+
+cor_small <- cor(num_mat, use="pairwise.complete.obs", method="spearman")
+cor_small
+
+
+tab <- dat_fast %>%
+  filter(!is.na(dom_family)) %>%
+  count(dist_current, dom_family) %>%
+  pivot_wider(names_from = dist_current, values_from = n, values_fill = 0)
+
+# dominant family x disturbance (0/1)
+mat <- dat_fast %>%
+  filter(!is.na(dom_family), !is.na(dist_current)) %>%
+  count(dom_family, dist_current) %>%
+  tidyr::pivot_wider(names_from = dist_current, values_from = n, values_fill = 0) %>%
+  tibble::column_to_rownames("dom_family") %>%
+  as.matrix()
+
+dim(mat)
+mat[1:5, , drop = FALSE]
+
+chisq <- chisq.test(mat)
+
+chisq$p.value
+chisq$expected[1:5, , drop = FALSE]   # peek at expected counts
+
+# standardized residuals (always coerce to matrix)
+resid_mat <- as.matrix(chisq$stdres)
+
+# top contributors (big absolute residuals)
+top_resid <- as.data.frame(as.table(resid_mat)) %>%
+  mutate(abs_resid = abs(Freq)) %>%
+  arrange(desc(abs_resid))
+
+head(top_resid, 15)
+chisq_mc <- chisq.test(mat, simulate.p.value = TRUE, B = 9999)
+chisq_mc$p.value
+min_n <- 3  # threshold for rare dominant families
+
+dat_dom <- dat_fast %>%
+  filter(!is.na(dom_family), !is.na(dist_current)) %>%
+  group_by(dom_family) %>%
+  mutate(tot = n()) %>%
+  ungroup() %>%
+  mutate(dom_family2 = if_else(tot < min_n, "Other", dom_family))
+
+mat2 <- dat_dom %>%
+  count(dom_family2, dist_current) %>%
+  pivot_wider(names_from = dist_current, values_from = n, values_fill = 0) %>%
+  tibble::column_to_rownames("dom_family2") %>%
+  as.matrix()
+
+chisq2 <- chisq.test(mat2)
+chisq2$p.value
+
+
+
+
+library(vegan)
+# long weed table with counts
+weed_long <- surface_sampling_weed %>%
+  transmute(
+    row_num = as.character(row_num),
+    family = str_squish(family),
+    weed_count = as.numeric(weed_count)
+  ) %>%
+  filter(!is.na(weed_count), !is.na(family))
+
+# point x family abundance
+fam_wide <- weed_long %>%
+  group_by(row_num, family) %>%
+  summarise(abund = sum(weed_count, na.rm = TRUE), .groups = "drop") %>%
+  pivot_wider(names_from = family, values_from = abund, values_fill = 0)
+
+# community matrix (rows = points, cols = families)
+comm <- fam_wide %>%
+  column_to_rownames("row_num") %>%
+  as.matrix()
+
+# remove points with zero total weeds (Bray-Curtis doesn't like all-zero rows)
+keep_rows <- rowSums(comm) > 0
+comm <- comm[keep_rows, , drop = FALSE]
+
+# convert to relative abundance (recommended)
+comm_rel <- decostand(comm, method = "total")
+meta <- soil_dist %>%
+  transmute(
+    row_num = as.character(row_num),
+    dist_current = factor(dist_current),          # 0/1 as factor for grouping
+    dist_to_current_m = as.numeric(dist_to_current_m)
+  ) %>%
+  filter(row_num %in% rownames(comm_rel)) %>%
+  distinct(row_num, .keep_all = TRUE) %>%
+  arrange(match(row_num, rownames(comm_rel)))
+
+# align rows exactly (important!)
+comm_rel <- comm_rel[meta$row_num, , drop = FALSE]
+stopifnot(all(meta$row_num == rownames(comm_rel)))
+set.seed(1)
+adon_bin <- adonis2(comm_rel ~ dist_current, data = meta, method = "bray", permutations = 9999)
+adon_bin
+set.seed(1)
+adon_dist <- adonis2(comm_rel ~ dist_to_current_m, data = meta, method = "bray", permutations = 9999)
+adon_dist
+set.seed(1)
+adon_both <- adonis2(comm_rel ~ dist_current + dist_to_current_m, data = meta, method = "bray", permutations = 9999)
+adon_both
+bray <- vegdist(comm_rel, method = "bray")
+
+bd <- betadisper(bray, meta$dist_current)
+anova(bd)           # test of dispersion differences
+permutest(bd, permutations = 9999)
+
+# quick visualization
+plot(bd)
+boxplot(bd, ylab = "Distance to group centroid (Bray-Curtis)")
+ord <- metaMDS(comm_rel, distance = "bray", k = 2, trymax = 50)
+
+plot(ord, type = "n")
+points(ord, display = "sites",
+       pch = 19,
+       col = ifelse(meta$dist_current == 1, "red", "blue"))
+legend("topright", legend = c("Not disturbed (0)", "Disturbed (1)"),
+       col = c("blue", "red"), pch = 19, bty = "n")
+
+
+# for a more focused test, subset to just the undisturbed points and see if distance to disturbance still matters
+meta2 <- meta %>% filter(dist_current == 0)
+comm2 <- comm_rel[meta2$row_num, , drop = FALSE]
+
+set.seed(1)
+adon_outside <- adonis2(comm2 ~ dist_to_current_m, data = meta2, method="bray", permutations=9999)
+adon_outside 
+# even among undisturbed points, distance to disturbance has a significant effect on community composition (p = 0.0038)
+# “Distance to disturbance remained a significant predictor of weed family composition even when analyses were restricted to undisturbed sampling points (PERMANOVA, Bray–Curtis, R² = 0.0277, p = 0.0038), indicating that compositional differences extend beyond disturbance polygons and are consistent with a proximity (edge) effect.”
+```
+
+```{r}
+
+# pick the index columns you actually want
+idx_cols <- c(
+  "simpsons_diversity_index",
+  "shannon_weiner_diversity_index",
+  "pielous_evenness_index",
+  "berger_parker_dominance_index"
+)
+
+dist_cols <- c("dist_current", "dist_to_current_m")
+
+dat_idx <- soil_dist %>%
+  mutate(row_num = as.character(row_num)) %>%
+  select(row_num, any_of(dist_cols)) %>%
+  left_join(
+    surface_sampling_idx %>%
+      mutate(row_num = as.character(row_num)) %>%
+      select(row_num, any_of(idx_cols)),
+    by = "row_num"
+  ) %>%
+  mutate(across(all_of(c(dist_cols, idx_cols)), ~ suppressWarnings(as.numeric(.x))))
+cor_mat <- cor(
+  dat_idx %>% select(all_of(c(dist_cols, idx_cols))),
+  use = "pairwise.complete.obs",
+  method = "spearman"
+)
+
+cor_mat
+cor_block <- cor_mat[dist_cols, idx_cols, drop = FALSE]
+cor_block
+library(corrplot)
+corrplot::corrplot(cor_block, is.corr = TRUE, method = "color",
+                   tl.cex = 0.9, mar = c(0,0,1,0))
+
+```
+
