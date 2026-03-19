@@ -1090,6 +1090,28 @@ p_cor_fam
 
 
 ```
+
+```{r}
+#seasonality vs soil nutrients:
+
+#seasonality vs covariates:
+
+#annual vs perennial vs soil nutrients:
+
+#annual vs perennial vs covariates:
+
+#broadleaves vs grasses vs sedge vs soil nutrients:
+
+#broadleaves vs grasses vs sedge vs covariates:
+
+#stacked traits: annual broadleaves,vs perennial broadleaves vs annual grasses vs perennial grasses vs annual sedges vs perennial sedges vs soil nutrients:
+
+#stacked traits: annual broadleaves,vs perennial broadleaves vs annual grasses vs perennial grasses vs annual sedges vs perennial sedges vs covariates:
+
+
+```
+
+
 ```{r FDR correction, message=FALSE, warning=FALSE, eval = FALSE}
 #FDR correction:
 make_taxon_soil_corplot_fdr <- function(surface_sampling_weed, surface_sampling,
