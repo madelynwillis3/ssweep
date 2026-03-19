@@ -1,0 +1,2166 @@
+---
+title: "SSWEEP_proj_3_18_26"
+format: html
+---
+
+```{r}
+library(tidyverse)
+library(janitor)
+library(sf)
+library(terra)
+library(ranger)
+library(ggplot2)
+library(scales)
+library(leaflet)
+library(readxl)
+library(tidyverse)
+library(sf)
+library(ggplot2)
+library(readxl)
+library(terra)
+library(ranger)
+library(viridis)
+library(janitor)
+library(randomForest)
+library(purrr)
+library(reshape2)
+library(leaflet)
+library(scales)
+library(htmltools)
+library(vegan)
+
+```
+###### Load Data
+
+```{r load data, message=FALSE, warning=FALSE}
+##### Load data
+  #load data:
+  #new weed ID data (xlsx)
+  weed_id_tax <- read_excel("../data/SSWEEP_data_with_tax_and_indices_02_2026.xlsx", sheet = "SSWEEP")
+  #indices:
+  weed_idx <- read_excel("../data/SSWEEP_data_with_tax_and_indices_02_2026.xlsx", sheet = "Calculations for each grid")
+
+  #Weed ID data (xlsx):
+  weed_id <- read_csv("../data/SSWEEP_weed_id_count_data.csv")
+    #keep Total sheet but discard other sheets:
+    
+  #surface sampling (15cm) (.csv):
+  surface_sampling <- read_csv("../data/SSWEEP_surface_SP_samples.csv")
+  
+  #full profile samples:
+  # full_profile <- read_csv("../data/SSWEEP_full_profile_samples.csv")
+    #covariate stack (.tfs):
+     # cov_stack <- rast("../data/covariate_stack_3m.tif")
+
+```
+
+##### Data wrangling: join weed ID data to surface sampling points
+
+```{r data wrangling, message=FALSE, warning=FALSE}
+#clean weed_id_tax:
+weed_id_tax <- weed_id_tax %>%
+  select(1:143) %>%
+  #select rows 1:72:
+  slice(1:72)
+
+#weed id columns are rows under surface sampling row_num column:
+#pivot all columns of weed id:
+weed_id_long <- weed_id_tax %>%
+  pivot_longer( cols = -c("Common Name","Genus","Species","Family","Life Cycle","Season","Type"),
+               names_to = "row_num", 
+               values_to = "weed_count") %>%
+  #rename ...1 to weed_species 
+  rename(weed_species = "Common Name")
+
+#join row_num 
+surface_sampling_weed <- surface_sampling %>%
+  left_join(weed_id_long, by = "row_num") %>%
+  clean_names()
+
+head(surface_sampling_weed)
+
+```
+
+### Map of dominant weed family + dominance share (family abundance / total abundance) at each surface sampling point
+
+###### With circle size scaled by total abundance and fill opacity scaled by dominance share. Use an imagery basemap and a color palette for families. Include legends for both size and opacity.
+
+```{r weed map, warning=FALSE}
+
+
+# ---- 1) dominant family + dominance share ----
+weed_point_family <- surface_sampling_weed %>%
+  mutate(
+    weed_count = as.numeric(weed_count),
+    family = str_squish(family)
+  ) %>%
+  filter(!is.na(weed_count)) %>%
+  group_by(row_num) %>%
+  mutate(total_abundance = sum(weed_count, na.rm = TRUE)) %>%
+  ungroup() %>%
+  group_by(row_num, family) %>%
+  summarise(
+    x = first(x),
+    y = first(y),
+    total_abundance = first(total_abundance),
+    family_abundance = sum(weed_count, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  group_by(row_num) %>%
+  slice_max(order_by = family_abundance, n = 1, with_ties = FALSE) %>%
+  mutate(dominance = family_abundance / pmax(total_abundance, 1)) %>%
+  ungroup()
+
+weed_sf <- st_as_sf(weed_point_family, coords = c("x","y"), crs = 4326)
+
+# ---- 2) palettes + scaling ----
+fam_levels <- sort(unique(weed_sf$family))
+pal <- colorFactor(palette = "Dark2", domain = fam_levels)   # or "Dark2", "Paired", etc.
+
+# radius from total abundance (cap so one crazy point doesn't take over)
+rad <- rescale(weed_sf$total_abundance,
+               to = c(4, 18),
+               from = c(min(weed_sf$total_abundance, na.rm=TRUE),
+                        quantile(weed_sf$total_abundance, 0.95, na.rm=TRUE)))
+rad <- pmax(4, rad)
+
+# alpha from dominance (keep visible even if low)
+alpha_fill <- pmax(0.25, pmin(1, weed_sf$dominance))
+
+# popup text
+popup_txt <- paste0(
+  "<b>Grid:</b> ", weed_sf$row_num,
+  "<br><b>Dominant family:</b> ", weed_sf$family,
+  "<br><b>Total abundance:</b> ", weed_sf$total_abundance,
+  "<br><b>Family abundance:</b> ", weed_sf$family_abundance,
+  "<br><b>Dominance share:</b> ", round(weed_sf$dominance, 2)
+)
+
+# ---- 3) leaflet map with imagery basemap ----
+# build an "alpha legend" as HTML
+alpha_vals <- round(seq(max(0.25, min(weed_sf$dominance, na.rm=TRUE)),
+                        max(weed_sf$dominance, na.rm=TRUE),
+                        length.out = 4), 2)
+
+alpha_legend <- tags$div(
+  style = "
+    background: rgba(255,255,255,0.9);
+    padding: 8px 10px;
+    border-radius: 6px;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.3);
+    font-size: 12px;
+    line-height: 16px;
+  ",
+  tags$div(tags$b("Dominance (fill opacity)")),
+  tags$div(style="margin-top:6px;",
+    lapply(alpha_vals, function(a){
+      tags$div(style="display:flex; align-items:center; margin-bottom:4px;",
+        # a little circle swatch with different alpha
+        tags$span(style = sprintf(
+          "display:inline-block; width:12px; height:12px; border-radius:50%%;
+           background: rgba(0,0,0,%.2f); border:1px solid #555; margin-right:8px;",
+          a
+        )),
+        tags$span(sprintf("%.2f", a))
+      )
+    })
+  ),
+  tags$div(style="margin-top:6px; color:#444;",
+           "More opaque = stronger dominance")
+)
+# ---- SIZE LEGEND (abundance -> circle radius) ----
+# pick 4 representative abundance values (min, median, 75th, 95th-ish)
+ab_vals <- c(
+  min(weed_sf$total_abundance, na.rm = TRUE),
+  median(weed_sf$total_abundance, na.rm = TRUE),
+  quantile(weed_sf$total_abundance, 0.75, na.rm = TRUE),
+  quantile(weed_sf$total_abundance, 0.95, na.rm = TRUE)
+) %>% as.numeric() %>% unique() %>% sort()
+
+# convert those abundance values to radii using the SAME mapping you used for points
+rad_fun <- function(x) {
+  rescale(x, to = c(4, 18),
+          from = c(min(weed_sf$total_abundance, na.rm=TRUE),
+                   quantile(weed_sf$total_abundance, 0.95, na.rm=TRUE))) %>%
+    pmax(4) %>% pmin(18)
+}
+
+rad_vals <- rad_fun(ab_vals)
+
+size_legend <- tags$div(
+  style = "
+    background: rgba(255,255,255,0.9);
+    padding: 8px 10px;
+    border-radius: 6px;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.3);
+    font-size: 12px;
+    line-height: 16px;
+  ",
+  tags$div(tags$b("Total abundance (size)")),
+  tags$div(style="margin-top:6px;",
+    lapply(seq_along(ab_vals), function(i){
+      r <- rad_vals[i]
+      tags$div(style="display:flex; align-items:center; margin-bottom:6px;",
+        # circle swatch sized by radius (diameter = 2r)
+        tags$span(style = sprintf(
+          "display:inline-block; width:%dpx; height:%dpx; border-radius:50%%;
+           background: rgba(0,0,0,0.25); border:1px solid #555; margin-right:10px;",
+          round(2*r), round(2*r)
+        )),
+        tags$span(format(round(ab_vals[i], 1), trim = TRUE))
+      )
+    })
+  )
+)
+
+leaflet(weed_sf) %>%
+  addProviderTiles(providers$Esri.WorldImagery, group = "Imagery") %>%
+  addProviderTiles(providers$CartoDB.Positron, group = "Light") %>%
+  addLayersControl(baseGroups = c("Imagery", "Light"),
+                   options = layersControlOptions(collapsed = TRUE)) %>%
+  addCircleMarkers(
+    radius = rad,
+    color = ~pal(family),
+    weight = 2,
+    opacity = 1,
+    fillColor = ~pal(family),
+    fillOpacity = alpha_fill,
+    popup = popup_txt
+  ) %>%
+  addLegend("bottomright",
+            pal = pal,
+            values = ~family,
+            title = "Dominant family",
+            opacity = 1) %>%
+  addControl(alpha_legend, position = "bottomleft") %>%
+  addControl(size_legend, position = "topleft")
+
+```
+
+```{r}
+
+# re-read sheet 1 cleanly (so we definitely have the bottom rows)
+ssweep <- read_excel("../data/SSWEEP_data_with_tax_and_indices_02_2026.xlsx",
+                     sheet = "SSWEEP")
+
+# grid columns are like 1A, 22C, 93H, etc.
+grid_cols <- names(ssweep)[str_detect(names(ssweep), "^\\d+[A-Za-z]+$")]
+
+# rows at the bottom of sheet 1 that you want
+idx_rows <- c(
+  "Simpson's diversity index",
+  "Shannon Weiner diversity index",
+  "Pielou's evenness index",
+  "Berger-Parker dominance index"
+)
+
+# extract ONLY those index rows + their values across the grid columns
+idx_by_point <- ssweep %>%
+  filter(`Common Name` %in% idx_rows) %>%
+  mutate(idx_name = make_clean_names(`Common Name`)) %>%
+  mutate(idx_name = make.unique(idx_name)) %>%   # handles the duplicate Berger-Parker row
+  select(idx_name, all_of(grid_cols)) %>%
+  pivot_longer(all_of(grid_cols), names_to = "row_num", values_to = "value") %>%
+  mutate(value = as.numeric(value)) %>%
+  pivot_wider(names_from = idx_name, values_from = value) %>%
+  clean_names()
+
+# join onto your surface points (now you have indices per point)
+surface_sampling_idx <- surface_sampling %>%
+  mutate(row_num = as.character(row_num)) %>%
+  left_join(idx_by_point, by = "row_num") %>%
+  clean_names()
+
+head(surface_sampling_idx)
+
+```
+
+```{r}
+#plot leaflet of shannon index across surface sampling points:
+surface_sampling_idx <- surface_sampling_idx %>%
+  select(-berger_parker_dominance_index) %>%
+  rename(berger_parker_dominance_index = berger_parker_dominance_index_2)
+
+idx_sf <- st_as_sf(surface_sampling_idx, coords = c("x","y"), crs = 4326)
+
+# ---- 1) find all index columns (adjust pattern if needed) ----
+idx_cols <- names(idx_sf) %>%
+  keep(~ str_detect(.x, "simpson|shannon|pielou|evenness|berger|parker|dominance"))
+
+idx_cols
+# (sanity check) if you want to force a specific order:
+idx_cols <- idx_cols[idx_cols %in% c(
+  "simpsons_diversity_index",
+  "shannon_weiner_diversity_index",
+  "pielous_evenness_index",
+  "berger_parker_dominance_index"
+)]
+
+# ---- 2) popup that ALWAYS includes all indices ----
+popup_all <- purrr::pmap_chr(
+  idx_sf %>% st_drop_geometry() %>% select(row_num, all_of(idx_cols)),
+  function(...) {
+    r <- list(...)
+    rn <- r$row_num
+    r$row_num <- NULL
+
+    lines <- purrr::imap_chr(r, \(v, nm) {
+      if (is.null(v) || is.na(v)) return(paste0("<b>", nm, ":</b> NA"))
+      paste0("<b>", nm, ":</b> ", round(as.numeric(v), 4))
+    })
+
+    paste0("<b>Row:</b> ", rn, "<br>", paste(lines, collapse = "<br>"))
+  }
+)
+
+# Precompute coordinates once
+coords <- st_coordinates(idx_sf)
+
+# ---- 3) build leaflet with one overlay per index ----
+m <- leaflet(idx_sf) %>%
+  addProviderTiles(providers$Esri.WorldImagery, group = "Imagery") %>%
+  addProviderTiles(providers$CartoDB.Positron, group = "Light")
+
+for (col in idx_cols) {
+  pal <- colorNumeric("viridis", domain = idx_sf[[col]], na.color = "transparent")
+
+  m <- m %>%
+    addCircleMarkers(
+      lng = coords[,1], lat = coords[,2],
+      radius = 7,
+      stroke = TRUE, weight = 1, color = "white",
+      fillColor = pal(idx_sf[[col]]),
+      fillOpacity = 0.9,
+      popup = popup_all,
+      group = col
+    ) %>%
+    addLegend(
+      position = "bottomright",
+      pal = pal,
+      values = idx_sf[[col]],
+      title = col,
+      group = col
+    )
+}
+
+m %>%
+  addLayersControl(
+    baseGroups = c("Imagery", "Light"),
+    overlayGroups = idx_cols,
+    options = layersControlOptions(collapsed = FALSE)
+  ) %>%
+  hideGroup(idx_cols[-1])  # show first index layer by default
+```
+
+
+
+
+
+
+
+
+### Build training table for RF soil-property rasters
+
+###### Based on surface samples, using covariates extracted at soil sampling points.
+
+```{r RF soil-property rasters, message=FALSE, warning=FALSE}
+#questions:
+  #can any soil properties predict weed species presence/abundance or diversity indices?
+  #what topographic covariates are most predictive of weed species?
+  #are there particular soil nutrients that are associated with particular weed species or diversity indices or weed taxa?
+  #are there particular disturbance covariates that are associated with particular weed species or diversity indices or weed taxa?
+  #are there particular full profile summaries (e.g. root depth) that are associated with particular weed species 
+    #or diversity indices or weed taxa?
+
+
+#plan: pull in disturbance covariate rasters and potentially create rasters such as distance to roads
+#pull in other covariates
+#potentially pull in full profile data (such as root depth data) to use as predictors in RF soil-property rasters (but only if we have enough points with root depth data to make it worthwhile)
+#merge with soil nutrients
+#correlation matrix between taxa, nutrients
+#correlation matrix between disturbance covariates and weed species and indices
+#correlation matrix between full profile summaries and weed species/indicies/nutrients
+
+
+
+# Disturbance raster (UTM 17N)
+current_dist <- rast("../data/disturbance/currently_dist_binary.tif")
+
+# Recode categorical -> binary (you already did this)
+lev <- levels(current_dist)[[1]]
+id_col <- names(lev)[1]
+yes_id <- lev[[id_col]][lev$CurrentDis == "Yes"]
+current_dist_bin <- ifel(current_dist == yes_id, 1, 0)
+names(current_dist_bin) <- "dist_current"
+
+# OPTIONAL: distance-to-disturbance raster (meters)
+# (distance from each cell to nearest disturbed cell)
+dist_to_dist <- distance(current_dist_bin, value = 1)
+names(dist_to_dist) <- "dist_to_current_m"
+
+# --- disturbance rasters already made ---
+# current_dist_bin (0/1) and dist_to_dist (meters)
+
+# points in raster CRS
+soil_pts_ll <- surface_sampling %>%
+  select(row_num, x, y, lbc, lbc_eq, p_h_2, ca, k, mg, mn, p, zn) %>%
+  st_as_sf(coords = c("x","y"), crs = 4326)
+
+soil_pts_utm <- st_transform(soil_pts_ll, crs(current_dist_bin))
+
+#-----------------------------------
+# keep projected coordinates
+#-----------------------------------
+soil_pts_utm_coords <- soil_pts_utm %>%
+  mutate(
+    x_utm = st_coordinates(geometry)[,1],
+    y_utm = st_coordinates(geometry)[,2]
+  ) %>%
+  st_drop_geometry() %>%
+  janitor::clean_names()
+
+# disturbance values already extracted above:
+# dist_vals
+# dist_dvals
+
+point_base <- soil_pts_utm_coords %>%
+  bind_cols(dist_vals, dist_dvals) %>%
+  janitor::clean_names() %>%
+  mutate(row_num = as.character(row_num))
+
+# point_env now includes projected coords
+point_env <- point_base %>%
+  left_join(idx_keep, by = "row_num") %>%
+  select(
+    row_num,
+    x_utm,
+    y_utm,
+    dist_current,
+    dist_to_current_m,
+    all_of(intersect(soil_vars, names(.))),
+    all_of(covar_vars),
+    simpsons_diversity_index,
+    shannon_weiner_diversity_index,
+    pielous_evenness_index,
+    berger_parker_dominance_index
+  )
+
+analysis_dat <- point_env %>%
+  left_join(weed_traits_point, by = "row_num") %>%
+  mutate(
+    dist_current = as.factor(dist_current)
+  )
+
+glimpse(analysis_dat)
+# extract disturbance values
+dist_vals <- terra::extract(current_dist_bin, vect(soil_pts_utm)) %>% select(-ID)
+dist_dvals <- terra::extract(dist_to_dist, vect(soil_pts_utm)) %>% select(-ID)
+
+soil_dist <- soil_pts_utm %>%
+  st_drop_geometry() %>%
+  bind_cols(dist_vals, dist_dvals) %>%
+  clean_names()
+
+
+
+
+# current_dist_bin is 0/1
+# make a target raster: 1 where disturbed, NA elsewhere
+target <- ifel(current_dist_bin == 1, 1, NA)
+
+# distance to nearest target cell (meters, since UTM)
+dist_to_dist <- distance(target)
+names(dist_to_dist) <- "dist_to_current_m"
+
+plot(dist_to_dist)
+global(dist_to_dist, "range", na.rm=TRUE)
+dist_dvals <- terra::extract(dist_to_dist, vect(soil_pts_utm)) %>% select(-ID)
+
+soil_dist <- soil_pts_utm %>%
+  st_drop_geometry() %>%
+  bind_cols(dist_vals, dist_dvals) %>%
+  janitor::clean_names()
+```
+
+
+```{r RF soil-property rasters, message=FALSE, warning=FALSE}
+
+#-----------------------------
+# A. point-level soil + disturbance table
+#-----------------------------
+soil_vars <- c("lbc","lbc_eq","p_h_2","ca","k","mg","mn","p","zn")
+# Disturbance raster (UTM 17N)
+current_dist <- rast("../data/disturbance/currently_dist_binary.tif")
+
+# Recode categorical -> binary (you already did this)
+lev <- levels(current_dist)[[1]]
+id_col <- names(lev)[1]
+yes_id <- lev[[id_col]][lev$CurrentDis == "Yes"]
+current_dist_bin <- ifel(current_dist == yes_id, 1, 0)
+names(current_dist_bin) <- "dist_current"
+
+# OPTIONAL: distance-to-disturbance raster (meters)
+# (distance from each cell to nearest disturbed cell)
+dist_to_dist <- distance(current_dist_bin, value = 1)
+names(dist_to_dist) <- "dist_to_current_m"
+
+# --- disturbance rasters already made ---
+# current_dist_bin (0/1) and dist_to_dist (meters)
+
+# points in raster CRS
+soil_pts_ll <- surface_sampling %>%
+  select(row_num, x, y, lbc, lbc_eq, p_h_2, ca, k, mg, mn, p, zn) %>%
+  st_as_sf(coords = c("x","y"), crs = 4326)
+
+soil_pts_utm <- st_transform(soil_pts_ll, crs(current_dist_bin))
+
+# extract disturbance values
+dist_vals <- terra::extract(current_dist_bin, vect(soil_pts_utm)) %>% select(-ID)
+dist_dvals <- terra::extract(dist_to_dist, vect(soil_pts_utm)) %>% select(-ID)
+
+soil_dist <- soil_pts_utm %>%
+  st_drop_geometry() %>%
+  bind_cols(dist_vals, dist_dvals) %>%
+  clean_names()
+
+
+
+
+# current_dist_bin is 0/1
+# make a target raster: 1 where disturbed, NA elsewhere
+target <- ifel(current_dist_bin == 1, 1, NA)
+
+# distance to nearest target cell (meters, since UTM)
+dist_to_dist <- distance(target)
+names(dist_to_dist) <- "dist_to_current_m"
+
+plot(dist_to_dist)
+global(dist_to_dist, "range", na.rm=TRUE)
+dist_dvals <- terra::extract(dist_to_dist, vect(soil_pts_utm)) %>% select(-ID)
+
+soil_dist <- soil_pts_utm %>%
+  st_drop_geometry() %>%
+  bind_cols(dist_vals, dist_dvals) %>%
+  janitor::clean_names()
+
+point_base <- soil_dist %>%
+  mutate(row_num = as.character(row_num)) %>%
+  clean_names()
+
+#-----------------------------
+# B. add diversity indices if you want them in the same table
+#-----------------------------
+idx_keep <- surface_sampling_idx %>%
+  mutate(row_num = as.character(row_num)) %>%
+  clean_names() %>%
+  select(
+    row_num,
+    simpsons_diversity_index,
+    shannon_weiner_diversity_index,
+    pielous_evenness_index,
+    berger_parker_dominance_index
+  )
+
+#-----------------------------
+# C. choose any spatial covariates already living in your point table
+#   edit this list to match your actual column names
+#-----------------------------
+candidate_covars <- c(
+  "elevation", "dem", "slope", "aspect", "twi", "ndvi",
+  "spi", "tri", "roughness", "curvature"
+)
+
+covar_vars <- intersect(candidate_covars, names(point_base))
+
+#-----------------------------
+# D. final point table (soil + disturbance + indices + spatial covariates)
+#-----------------------------
+point_env <- point_base %>%
+  left_join(idx_keep, by = "row_num") %>%
+  select(
+    row_num,
+    dist_current,
+    dist_to_current_m,
+    all_of(intersect(soil_vars, names(.))),
+    all_of(covar_vars),
+    simpsons_diversity_index,
+    shannon_weiner_diversity_index,
+    pielous_evenness_index,
+    berger_parker_dominance_index
+  )
+
+glimpse(point_env)
+```
+
+```{r}
+weed_trait_long <- surface_sampling_weed %>%
+  clean_names() %>%
+  transmute(
+    row_num      = as.character(row_num),
+    weed_species = str_squish(as.character(weed_species)),
+    family       = str_squish(as.character(family)),
+    genus        = str_squish(as.character(genus)),
+    species      = str_squish(as.character(species)),
+    life_cycle   = str_squish(as.character(life_cycle)),
+    season       = str_squish(as.character(season)),
+    type         = str_squish(as.character(type)),
+    weed_count   = as.numeric(weed_count)
+  ) %>%
+  filter(!is.na(weed_count))
+
+# standardize a bit
+weed_trait_long <- weed_trait_long %>%
+  mutate(
+    life_cycle = case_when(
+      str_detect(str_to_lower(life_cycle), "annual") ~ "Annual",
+      str_detect(str_to_lower(life_cycle), "perennial") ~ "Perennial",
+      TRUE ~ NA_character_
+    ),
+    type = case_when(
+      str_detect(str_to_lower(type), "broad") ~ "Broadleaf",
+      str_detect(str_to_lower(type), "grass") ~ "Grass",
+      str_detect(str_to_lower(type), "sedge") ~ "Sedge",
+      TRUE ~ NA_character_
+    ),
+    season = case_when(
+      str_detect(str_to_lower(season), "warm") ~ "Warm",
+      str_detect(str_to_lower(season), "cool") ~ "Cool",
+      TRUE ~ NA_character_
+    )
+  )
+
+# basic total/richness summaries
+weed_point_summary <- weed_trait_long %>%
+  group_by(row_num) %>%
+  summarise(
+    weed_total_abundance  = sum(weed_count, na.rm = TRUE),
+    weed_species_richness = sum(weed_count > 0, na.rm = TRUE),
+    weed_family_richness  = n_distinct(family[weed_count > 0]),
+    .groups = "drop"
+  )
+
+# life cycle abundance
+life_cycle_wide <- weed_trait_long %>%
+  filter(!is.na(life_cycle)) %>%
+  group_by(row_num, life_cycle) %>%
+  summarise(abund = sum(weed_count, na.rm = TRUE), .groups = "drop") %>%
+  pivot_wider(
+    names_from = life_cycle,
+    values_from = abund,
+    values_fill = 0,
+    names_prefix = "life_"
+  )
+
+# type abundance
+type_wide <- weed_trait_long %>%
+  filter(!is.na(type)) %>%
+  group_by(row_num, type) %>%
+  summarise(abund = sum(weed_count, na.rm = TRUE), .groups = "drop") %>%
+  pivot_wider(
+    names_from = type,
+    values_from = abund,
+    values_fill = 0,
+    names_prefix = "type_"
+  )
+
+# season abundance
+season_wide <- weed_trait_long %>%
+  filter(!is.na(season)) %>%
+  group_by(row_num, season) %>%
+  summarise(abund = sum(weed_count, na.rm = TRUE), .groups = "drop") %>%
+  pivot_wider(
+    names_from = season,
+    values_from = abund,
+    values_fill = 0,
+    names_prefix = "season_"
+  )
+
+# stacked trait groups: annual broadleaf, perennial grass, etc.
+stacked_trait_wide <- weed_trait_long %>%
+  mutate(
+    stacked_trait = case_when(
+      !is.na(life_cycle) & !is.na(type) ~ paste(life_cycle, type, sep = "_"),
+      TRUE ~ NA_character_
+    )
+  ) %>%
+  filter(!is.na(stacked_trait)) %>%
+  group_by(row_num, stacked_trait) %>%
+  summarise(abund = sum(weed_count, na.rm = TRUE), .groups = "drop") %>%
+  pivot_wider(
+    names_from = stacked_trait,
+    values_from = abund,
+    values_fill = 0,
+    names_prefix = "trait_"
+  )
+
+# combine all point-level weed summaries
+weed_traits_point <- weed_point_summary %>%
+  left_join(life_cycle_wide, by = "row_num") %>%
+  left_join(type_wide, by = "row_num") %>%
+  left_join(season_wide, by = "row_num") %>%
+  left_join(stacked_trait_wide, by = "row_num") %>%
+  clean_names()
+
+glimpse(weed_traits_point)
+
+analysis_dat <- point_env %>%
+  left_join(weed_traits_point, by = "row_num") %>%
+  mutate(
+    dist_current = as.factor(dist_current)
+  )
+
+glimpse(analysis_dat)
+```
+
+```{r}
+trait_vars <- names(analysis_dat) %>%
+  keep(~ str_detect(.x, "^life_|^type_|^season_|^trait_|weed_total_abundance|weed_species_richness|weed_family_richness|simpsons|shannon|pielous|berger"))
+
+df_long_traits <- analysis_dat %>%
+  pivot_longer(all_of(trait_vars), names_to = "trait_var", values_to = "value") %>%
+  mutate(value = as.numeric(value))
+
+p_trait <- df_long_traits %>%
+  filter(!is.na(value), !is.na(dist_current)) %>%
+  group_by(trait_var) %>%
+  summarise(
+    n0 = sum(dist_current == "0"),
+    n1 = sum(dist_current == "1"),
+    p_value = ifelse(n0 >= 2 & n1 >= 2,
+                     suppressWarnings(wilcox.test(value ~ dist_current)$p.value),
+                     NA_real_),
+    .groups = "drop"
+  ) %>%
+  mutate(
+    p_bh = p.adjust(p_value, method = "BH"),
+    p_lab = ifelse(is.na(p_value), "p=NA",
+                   paste0("p=", signif(p_value, 3), " | BH=", signif(p_bh, 3)))
+  )
+
+plot_dat <- df_long_traits %>%
+  left_join(
+    df_long_traits %>%
+      group_by(trait_var) %>%
+      summarise(y_pos = max(value, na.rm = TRUE) * 1.05, .groups = "drop"),
+    by = "trait_var"
+  )
+
+p_trait_plot <- p_trait %>%
+  left_join(plot_dat %>% distinct(trait_var, y_pos), by = "trait_var")
+
+ggplot(plot_dat, aes(x = dist_current, y = value)) +
+  geom_boxplot(outlier.alpha = 0.25) +
+  geom_jitter(width = 0.15, alpha = 0.25) +
+  facet_wrap(~ trait_var, scales = "free_y") +
+  geom_text(
+    data = p_trait_plot,
+    aes(x = 1.5, y = y_pos, label = p_lab),
+    inherit.aes = FALSE,
+    size = 2.8
+  ) +
+  labs(x = "Currently disturbed (0/1)", y = "Trait metric") +
+  theme_minimal()
+```
+```{r}
+ggplot(
+  analysis_dat %>%
+    pivot_longer(all_of(trait_vars), names_to = "trait_var", values_to = "value"),
+  aes(x = dist_to_current_m, y = as.numeric(value))
+) +
+  geom_point(alpha = 0.3) +
+  geom_smooth(method = "loess", se = FALSE) +
+  facet_wrap(~ trait_var, scales = "free_y") +
+  labs(x = "Distance to current disturbance (m)", y = "Trait metric") +
+  theme_minimal()
+```
+```{r}
+dist_trait_cor <- analysis_dat %>%
+  summarise(across(all_of(trait_vars), ~ suppressWarnings(
+    cor(as.numeric(.x), dist_to_current_m, method = "spearman", use = "pairwise.complete.obs")
+  ))) %>%
+  pivot_longer(everything(), names_to = "trait_var", values_to = "rho") %>%
+  arrange(desc(abs(rho)))
+
+dist_trait_cor
+```
+```{r}
+predictor_vars <- c(
+  intersect(c("dist_current", "dist_to_current_m"), names(analysis_dat)),
+  intersect(soil_vars, names(analysis_dat)),
+  covar_vars
+)
+
+predictor_vars_num <- predictor_vars[predictor_vars != "dist_current"]
+
+cor_grid <- expand_grid(
+  trait_var = trait_vars,
+  predictor = predictor_vars_num
+) %>%
+  rowwise() %>%
+  mutate(
+    rho = suppressWarnings(
+      cor(
+        as.numeric(analysis_dat[[trait_var]]),
+        as.numeric(analysis_dat[[predictor]]),
+        method = "spearman",
+        use = "pairwise.complete.obs"
+      )
+    )
+  ) %>%
+  ungroup()
+
+ggplot(cor_grid, aes(x = predictor, y = trait_var, fill = rho)) +
+  geom_tile(color = "white") +
+  geom_text(aes(label = round(rho, 2)), size = 2.6) +
+  scale_fill_viridis_c(option = "magma", limits = c(-1, 1), name = "Spearman\nrho") +
+  labs(x = "Environmental predictor", y = "Weed trait metric") +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    panel.grid = element_blank()
+  )
+```
+```{r}
+rf_predictors <- c(
+  intersect(soil_vars, names(analysis_dat)),
+  intersect(covar_vars, names(analysis_dat)),
+  "dist_to_current_m"
+)
+
+rf_predictors <- unique(rf_predictors)
+
+rf_targets <- c(
+  "weed_total_abundance",
+  "weed_species_richness",
+  "weed_family_richness",
+  "shannon_weiner_diversity_index",
+  "simpsons_diversity_index",
+  "life_annual",
+  "life_perennial",
+  "type_broadleaf",
+  "type_grass",
+  "type_sedge"
+)
+
+rf_targets <- intersect(rf_targets, names(analysis_dat))
+
+fit_rf_importance <- function(target_var, dat, predictors) {
+  d <- dat %>%
+    select(all_of(c(target_var, predictors))) %>%
+    mutate(across(everything(), as.numeric)) %>%
+    drop_na()
+
+  if (nrow(d) < 15) return(NULL)
+
+  mod <- ranger(
+    formula = as.formula(paste(target_var, "~ .")),
+    data = d,
+    num.trees = 500,
+    importance = "permutation",
+    seed = 1
+  )
+
+  tibble(
+    response = target_var,
+    predictor = names(mod$variable.importance),
+    importance = as.numeric(mod$variable.importance)
+  )
+}
+
+rf_imp <- map_dfr(rf_targets, fit_rf_importance, dat = analysis_dat, predictors = rf_predictors)
+
+ggplot(rf_imp, aes(x = predictor, y = response, fill = importance)) +
+  geom_tile(color = "white") +
+  geom_text(aes(label = round(importance, 2)), size = 2.6) +
+  scale_fill_viridis_c() +
+  labs(x = "Predictor", y = "Response") +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    panel.grid = element_blank()
+  )
+```
+```{r}
+analysis_bins <- analysis_dat %>%
+  mutate(
+    dist_bin = cut(
+      dist_to_current_m,
+      breaks = c(-Inf, 5, 15, 30, Inf),
+      labels = c("0-5 m", "5-15 m", "15-30 m", ">30 m")
+    )
+  )
+
+dom_family_by_bin <- weed_trait_long %>%
+  group_by(row_num, family) %>%
+  summarise(fam_abund = sum(weed_count, na.rm = TRUE), .groups = "drop") %>%
+  group_by(row_num) %>%
+  slice_max(fam_abund, n = 1, with_ties = FALSE) %>%
+  ungroup() %>%
+  left_join(analysis_bins %>% select(row_num, dist_bin), by = "row_num") %>%
+  count(dist_bin, family) %>%
+  group_by(dist_bin) %>%
+  mutate(pct = n / sum(n))
+
+ggplot(dom_family_by_bin, aes(x = dist_bin, y = pct, fill = family)) +
+  geom_col() +
+  scale_y_continuous(labels = percent) +
+  labs(x = "Distance to disturbance", y = "Proportion of points", fill = "Dominant family") +
+  theme_minimal()
+
+
+# weed long table
+weed_family_long <- surface_sampling_weed %>%
+  janitor::clean_names() %>%
+  transmute(
+    row_num    = as.character(row_num),
+    family     = str_squish(as.character(family)),
+    weed_count = as.numeric(weed_count)
+  ) %>%
+  filter(!is.na(weed_count), weed_count > 0, !is.na(family), family != "")
+
+# total abundance per point
+point_totals <- weed_family_long %>%
+  group_by(row_num) %>%
+  summarise(total_abundance = sum(weed_count, na.rm = TRUE), .groups = "drop")
+
+# family abundance per point
+family_point <- weed_family_long %>%
+  group_by(row_num, family) %>%
+  summarise(family_abundance = sum(weed_count, na.rm = TRUE), .groups = "drop") %>%
+  left_join(point_totals, by = "row_num") %>%
+  mutate(
+    family_prop = family_abundance / total_abundance
+  )
+
+family_point_dist <- family_point_dist %>%
+  filter(total_abundance >= 3)
+
+top_fams <- family_point_dist %>%
+  group_by(family) %>%
+  summarise(total_family_abundance = sum(family_abundance, na.rm = TRUE), .groups = "drop") %>%
+  slice_max(total_family_abundance, n = 6) %>%
+  pull(family)
+
+family_model_dat <- family_point_dist %>%
+  filter(family %in% top_fams) %>%
+  mutate(other_abundance = total_abundance - family_abundance)
+family_plot_dat <- family_point_dist %>%
+  filter(family %in% top_fams)
+
+ggplot(family_plot_dat, aes(x = dist_to_current_m, y = family_prop, color = family)) +
+  geom_point(alpha = 0.25, size = 1) +
+  geom_smooth(method = "loess", se = TRUE) +
+  scale_y_continuous(labels = percent_format(accuracy = 1)) +
+  labs(
+    x = "Distance to disturbance (m)",
+    y = "Family proportion of total weeds",
+    color = "Family"
+  ) +
+  theme_minimal()
+
+family_bin_dat <- family_plot_dat %>%
+  mutate(
+    dist_bin = cut_width(dist_to_current_m, width = 5, boundary = 0)
+  ) %>%
+  group_by(family, dist_bin) %>%
+  summarise(
+    mid_dist = mean(dist_to_current_m, na.rm = TRUE),
+    mean_prop = mean(family_prop, na.rm = TRUE),
+    se_prop = sd(family_prop, na.rm = TRUE) / sqrt(n()),
+    n = n(),
+    .groups = "drop"
+  ) %>%
+  filter(n >= 3)
+
+ggplot(family_bin_dat, aes(x = mid_dist, y = mean_prop, color = family)) +
+  geom_line() +
+  geom_point() +
+  geom_ribbon(
+    aes(ymin = pmax(mean_prop - se_prop, 0),
+        ymax = pmin(mean_prop + se_prop, 1),
+        fill = family),
+    alpha = 0.10,
+    color = NA
+  ) +
+  scale_y_continuous(labels = percent_format(accuracy = 1)) +
+  labs(
+    x = "Distance to disturbance (m)",
+    y = "Mean family proportion",
+    color = "Family",
+    fill = "Family"
+  ) +
+  theme_minimal()
+
+```
+
+```{r}
+library(tidyverse)
+library(mgcv)
+library(broom)
+
+family_gam_results <- family_point_dist %>%
+  filter(family %in% top_fams) %>%
+  mutate(other_abundance = total_abundance - family_abundance) %>%
+  group_by(family) %>%
+  group_modify(~{
+    d <- .x %>%
+      filter(
+        total_abundance > 0,
+        is.finite(dist_to_current_m),
+        is.finite(family_abundance),
+        is.finite(other_abundance)
+      )
+
+    if(nrow(d) < 20) return(tibble())
+
+    mod <- gam(
+      cbind(family_abundance, other_abundance) ~ s(dist_to_current_m, k = 4),
+      data = d,
+      family = quasibinomial(),
+      method = "REML"
+    )
+
+    sm <- summary(mod)
+
+    tibble(
+      family = unique(d$family),
+      n = nrow(d),
+      edf = sm$s.table[1, "edf"],
+      F = sm$s.table[1, "F"],
+      p_value = sm$s.table[1, "p-value"]
+    )
+  }) %>%
+  ungroup() %>%
+  mutate(
+    p_bh = p.adjust(p_value, method = "BH"),
+    nonlinear = edf > 1
+  ) %>%
+  arrange(p_bh)
+
+family_gam_results
+```
+###### Spatial linkages for disturbance and family
+
+```{r}
+
+library(mgcv)
+family_point_dist <- family_point %>%
+  left_join(
+    point_env %>% select(row_num, dist_to_current_m),
+    by = "row_num"
+  ) %>%
+  left_join(
+    coord_lookup,
+    by = "row_num"
+  ) %>%
+  filter(
+    !is.na(dist_to_current_m),
+    !is.na(x_utm),
+    !is.na(y_utm)
+  )
+family_model_dat <- family_point_dist %>%
+  filter(total_abundance >= 3) %>%
+  group_by(family) %>%
+  mutate(total_family_abundance = sum(family_abundance, na.rm = TRUE)) %>%
+  ungroup()
+
+top_fams <- family_model_dat %>%
+  distinct(family, total_family_abundance) %>%
+  slice_max(total_family_abundance, n = 6) %>%
+  pull(family)
+
+family_model_dat <- family_model_dat %>%
+  filter(family %in% top_fams) %>%
+  mutate(other_abundance = total_abundance - family_abundance)
+
+glimpse(family_model_dat)
+glimpse(family_point_dist)
+
+library(mgcv)
+library(tibble)
+
+fit_family_spatial_gams <- function(d, key) {
+  fam_name <- key$family[1]
+
+  d <- d %>%
+    filter(
+      total_abundance > 0,
+      is.finite(dist_to_current_m),
+      is.finite(x_utm),
+      is.finite(y_utm),
+      is.finite(family_abundance),
+      is.finite(other_abundance)
+    )
+
+  if (nrow(d) < 25) {
+    return(tibble(
+      family = fam_name,
+      n = nrow(d),
+      aic_m0 = NA_real_,
+      aic_m1 = NA_real_,
+      aic_m2 = NA_real_,
+      aic_m3 = NA_real_,
+      dev_exp_m1 = NA_real_,
+      dev_exp_m2 = NA_real_,
+      dev_exp_m3 = NA_real_,
+      edf_dist_m1 = NA_real_,
+      p_dist_m1 = NA_real_,
+      edf_dist_m3 = NA_real_,
+      p_dist_m3 = NA_real_,
+      edf_space_m3 = NA_real_,
+      p_space_m3 = NA_real_
+    ))
+  }
+
+  m0 <- gam(
+    cbind(family_abundance, other_abundance) ~ 1,
+    data = d,
+    family = quasibinomial(),
+    method = "REML"
+  )
+
+  m1 <- gam(
+    cbind(family_abundance, other_abundance) ~
+      s(dist_to_current_m, k = 4),
+    data = d,
+    family = quasibinomial(),
+    method = "REML"
+  )
+
+  m2 <- gam(
+    cbind(family_abundance, other_abundance) ~
+      s(x_utm, y_utm, k = 15),
+    data = d,
+    family = quasibinomial(),
+    method = "REML"
+  )
+
+  m3 <- gam(
+    cbind(family_abundance, other_abundance) ~
+      s(dist_to_current_m, k = 4) +
+      s(x_utm, y_utm, k = 15),
+    data = d,
+    family = quasibinomial(),
+    method = "REML"
+  )
+
+  sm1 <- summary(m1)
+  sm2 <- summary(m2)
+  sm3 <- summary(m3)
+
+  tibble(
+    family = fam_name,
+    n = nrow(d),
+
+    aic_m0 = AIC(m0),
+    aic_m1 = AIC(m1),
+    aic_m2 = AIC(m2),
+    aic_m3 = AIC(m3),
+
+    dev_exp_m1 = sm1$dev.expl,
+    dev_exp_m2 = sm2$dev.expl,
+    dev_exp_m3 = sm3$dev.expl,
+
+    edf_dist_m1 = sm1$s.table[1, "edf"],
+    p_dist_m1   = sm1$s.table[1, "p-value"],
+
+    edf_dist_m3 = sm3$s.table[1, "edf"],
+    p_dist_m3   = sm3$s.table[1, "p-value"],
+
+    edf_space_m3 = sm3$s.table[2, "edf"],
+    p_space_m3   = sm3$s.table[2, "p-value"]
+  )
+}
+fit_family_spatial_gams <- function(d) {
+  fam_name <- unique(d$family)
+
+  d <- d %>%
+    filter(
+      total_abundance > 0,
+      is.finite(dist_to_current_m),
+      is.finite(x_utm),
+      is.finite(y_utm),
+      is.finite(family_abundance),
+      is.finite(other_abundance)
+    )
+
+  if (nrow(d) < 25) return(NULL)
+
+  m0 <- gam(
+    cbind(family_abundance, other_abundance) ~ 1,
+    data = d,
+    family = quasibinomial(),
+    method = "REML"
+  )
+
+  m1 <- gam(
+    cbind(family_abundance, other_abundance) ~
+      s(dist_to_current_m, k = 4),
+    data = d,
+    family = quasibinomial(),
+    method = "REML"
+  )
+
+  m2 <- gam(
+    cbind(family_abundance, other_abundance) ~
+      s(x_utm, y_utm, k = 20),
+    data = d,
+    family = quasibinomial(),
+    method = "REML"
+  )
+
+  m3 <- gam(
+    cbind(family_abundance, other_abundance) ~
+      s(dist_to_current_m, k = 4) +
+      s(x_utm, y_utm, k = 20),
+    data = d,
+    family = quasibinomial(),
+    method = "REML"
+  )
+
+  sm3 <- summary(m3)
+
+  tibble(
+    family = fam_name,
+    n = nrow(d),
+
+    aic_m0 = AIC(m0),
+    aic_m1 = AIC(m1),
+    aic_m2 = AIC(m2),
+    aic_m3 = AIC(m3),
+
+    dev_exp_m1 = summary(m1)$dev.expl,
+    dev_exp_m2 = summary(m2)$dev.expl,
+    dev_exp_m3 = summary(m3)$dev.expl,
+
+    edf_dist_m1 = summary(m1)$s.table[1, "edf"],
+    p_dist_m1   = summary(m1)$s.table[1, "p-value"],
+
+    edf_dist_m3 = sm3$s.table[1, "edf"],
+    p_dist_m3   = sm3$s.table[1, "p-value"],
+
+    edf_space_m3 = sm3$s.table[2, "edf"],
+    p_space_m3   = sm3$s.table[2, "p-value"]
+  )
+}
+
+family_spatial_results <- family_model_dat %>%
+  group_by(family) %>%
+  group_modify(~ fit_family_spatial_gams(.x)) %>%
+  ungroup() %>%
+  mutate(
+    p_dist_m3_bh = p.adjust(p_dist_m3, method = "BH"),
+    p_space_m3_bh = p.adjust(p_space_m3, method = "BH"),
+    nonlinear_dist = edf_dist_m3 > 1
+  ) %>%
+  arrange(p_dist_m3_bh)
+
+family_spatial_results
+
+```
+
+```{r}
+library(tidyverse)
+library(mgcv)
+library(janitor)
+ 
+covariates <- rast("../data/covars/covariate_stack_3m.tif")
+names(covariates)
+names(covariates) <- make.names(names(covariates))
+names(covariates)
+
+soil_pts_cov <- terra::extract(covariates, vect(soil_pts_utm), bind = TRUE) %>%
+  st_as_sf()
+
+soil_pts_cov_df <- soil_pts_cov %>%
+  st_drop_geometry() %>%
+  clean_names() %>%
+  mutate(row_num = as.character(row_num))
+
+glimpse(soil_pts_cov_df)
+
+soil_vars <- c("lbc", "lbc_eq", "p_h_2", "ca", "k", "mg", "mn", "p", "zn")
+
+env_dat <- point_env %>%
+  select(row_num, x_utm, y_utm, dist_current, dist_to_current_m, any_of(soil_vars)) %>%
+  left_join(
+    soil_pts_cov_df,
+    by = "row_num",
+    suffix = c("", "_cov")
+  )
+
+glimpse(env_dat)
+candidate_predictors <- c(
+  "dist_to_current_m",
+  "dist_current",
+  "p_h_2", "p", "k", "ca", "mg", "mn", "zn",
+  "elevation",
+  "slope",
+  "topographic_wetness_index_usgs",
+  "topographic_position_index",
+  "flow_accumulation_usgs",
+  "stream_power_index",
+  "vertical_distance_to_channel_network",
+  "ndvi_sept_2022"
+)
+
+candidate_predictors <- intersect(candidate_predictors, names(env_dat))
+candidate_predictors
+
+family_env_dat <- family_point %>%
+  left_join(env_dat, by = "row_num") %>%
+  mutate(
+    other_abundance = total_abundance - family_abundance
+  ) %>%
+  filter(
+    total_abundance >= 3,
+    !is.na(x_utm),
+    !is.na(y_utm)
+  )
+
+glimpse(family_env_dat)
+
+num_preds <- family_env_dat %>%
+  select(any_of(candidate_predictors)) %>%
+  mutate(across(everything(), ~ as.numeric(as.character(.x))))
+
+cor_mat <- cor(num_preds, use = "pairwise.complete.obs", method = "spearman")
+round(cor_mat, 2)
+
+cbind(family_abundance, other_abundance) ~
+  s(dist_to_current_m, k = 4) +
+  p_h_2 + p + k + ca + mg +
+  elevation + slope + topographic_wetness_index_usgs +
+  flow_accumulation_usgs + ndvi_sept_2022 +
+  s(x_utm, y_utm, k = 15)
+
+
+library(mgcv)
+library(broom)
+library(tibble)
+
+model_predictors <- c(
+  "p_h_2", "p", "k", "ca", "mg",
+  "elevation", "slope",
+  "topographic_wetness_index_usgs",
+  "flow_accumulation_usgs",
+  "ndvi_sept_2022"
+)
+
+model_predictors <- intersect(model_predictors, names(family_env_dat))
+
+fit_family_env_gam <- function(d, key, predictors) {
+  fam_name <- key$family[1]
+
+  keep_vars <- c(
+    "family_abundance", "other_abundance", "dist_to_current_m",
+    "x_utm", "y_utm", predictors
+  )
+
+  d <- d %>%
+    dplyr::select(any_of(c("family", keep_vars))) %>%
+    mutate(across(any_of(keep_vars), as.numeric)) %>%
+    drop_na()
+
+  if (nrow(d) < 30) {
+    return(tibble(
+      family = fam_name,
+      n = nrow(d),
+      dev_exp_env = NA_real_,
+      dev_exp_env_space = NA_real_,
+      edf_dist = NA_real_,
+      p_dist = NA_real_,
+      edf_space = NA_real_,
+      p_space = NA_real_
+    ))
+  }
+
+  rhs_env <- paste(
+    c("s(dist_to_current_m, k = 4)", predictors),
+    collapse = " + "
+  )
+
+  rhs_env_space <- paste(
+    c("s(dist_to_current_m, k = 4)", predictors, "s(x_utm, y_utm, k = 15)"),
+    collapse = " + "
+  )
+
+  f_env <- as.formula(
+    paste("cbind(family_abundance, other_abundance) ~", rhs_env)
+  )
+
+  f_env_space <- as.formula(
+    paste("cbind(family_abundance, other_abundance) ~", rhs_env_space)
+  )
+
+  m_env <- gam(
+    f_env,
+    data = d,
+    family = quasibinomial(),
+    method = "REML"
+  )
+
+  m_env_space <- gam(
+    f_env_space,
+    data = d,
+    family = quasibinomial(),
+    method = "REML"
+  )
+
+  sm_env <- summary(m_env)
+  sm_env_space <- summary(m_env_space)
+
+  # parametric terms from full model
+  param_tab <- broom::tidy(m_env_space) %>%
+    filter(term != "(Intercept)") %>%
+    mutate(family = fam_name)
+
+  smooth_tab <- tibble(
+    family = fam_name,
+    n = nrow(d),
+    dev_exp_env = sm_env$dev.expl,
+    dev_exp_env_space = sm_env_space$dev.expl,
+    edf_dist = sm_env_space$s.table[1, "edf"],
+    p_dist = sm_env_space$s.table[1, "p-value"],
+    edf_space = sm_env_space$s.table[nrow(sm_env_space$s.table), "edf"],
+    p_space = sm_env_space$s.table[nrow(sm_env_space$s.table), "p-value"]
+  )
+
+  list(
+    smooth = smooth_tab,
+    param = param_tab
+  )
+}
+
+top_fams <- family_env_dat %>%
+  group_by(family) %>%
+  summarise(total_family_abundance = sum(family_abundance, na.rm = TRUE), .groups = "drop") %>%
+  slice_max(total_family_abundance, n = 6) %>%
+  pull(family)
+
+family_env_top <- family_env_dat %>%
+  filter(family %in% top_fams)
+
+fam_split <- family_env_top %>%
+  group_split(family)
+
+fam_keys <- family_env_top %>%
+  group_keys(family)
+
+env_results_list <- map2(
+  fam_split,
+  split(fam_keys, seq_len(nrow(fam_keys))),
+  ~ fit_family_env_gam(.x, .y, predictors = model_predictors)
+)
+
+family_env_smooth <- map_dfr(env_results_list, "smooth") %>%
+  mutate(
+    p_dist_bh = p.adjust(p_dist, method = "BH"),
+    p_space_bh = p.adjust(p_space, method = "BH"),
+    nonlinear_dist = edf_dist > 1
+  )
+
+family_env_param <- map_dfr(env_results_list, "param") %>%
+  group_by(term) %>%
+  mutate(p_adj_bh = p.adjust(p.value, method = "BH")) %>%
+  ungroup()
+
+family_env_smooth
+family_env_param
+```
+
+```{r}
+library(tidyverse)
+library(mgcv)
+library(tibble)
+
+model_predictors <- c(
+  "p_h_2", "p", "k", "ca",
+  "elevation", "slope",
+  "topographic_wetness_index_usgs",
+  "topographic_position_index",
+  "ndvi_sept_2022"
+)
+
+fit_family_env_gam <- function(d, fam_name, predictors) {
+
+  keep_vars <- c(
+    "family_abundance", "other_abundance",
+    "dist_to_current_m", "x_utm", "y_utm",
+    predictors
+  )
+
+  d2 <- d %>%
+    select(any_of(keep_vars)) %>%
+    mutate(across(everything(), as.numeric)) %>%
+    drop_na()
+
+  if (nrow(d2) < 30) {
+    return(list(
+      smooth = tibble(
+        family = fam_name,
+        n = nrow(d2),
+        dev_exp_env = NA_real_,
+        dev_exp_env_space = NA_real_,
+        edf_dist = NA_real_,
+        p_dist = NA_real_,
+        edf_space = NA_real_,
+        p_space = NA_real_
+      ),
+      param = tibble(
+        family = character(),
+        term = character(),
+        estimate = numeric(),
+        std_error = numeric(),
+        statistic = numeric(),
+        p_value = numeric()
+      )
+    ))
+  }
+
+  f_env <- as.formula(
+    paste(
+      "cbind(family_abundance, other_abundance) ~ s(dist_to_current_m, k = 4) +",
+      paste(predictors, collapse = " + ")
+    )
+  )
+
+  f_env_space <- as.formula(
+    paste(
+      "cbind(family_abundance, other_abundance) ~ s(dist_to_current_m, k = 4) +",
+      paste(predictors, collapse = " + "),
+      "+ s(x_utm, y_utm, k = 15)"
+    )
+  )
+
+  m_env <- gam(
+    f_env,
+    data = d2,
+    family = quasibinomial(),
+    method = "REML"
+  )
+
+  m_env_space <- gam(
+    f_env_space,
+    data = d2,
+    family = quasibinomial(),
+    method = "REML"
+  )
+
+  sm_env <- summary(m_env)
+  sm_env_space <- summary(m_env_space)
+
+  smooth_tab <- tibble(
+    family = fam_name,
+    n = nrow(d2),
+    dev_exp_env = sm_env$dev.expl,
+    dev_exp_env_space = sm_env_space$dev.expl,
+    edf_dist = sm_env_space$s.table[1, "edf"],
+    p_dist = sm_env_space$s.table[1, "p-value"],
+    edf_space = sm_env_space$s.table[2, "edf"],
+    p_space = sm_env_space$s.table[2, "p-value"]
+  )
+
+  # safer extraction of parametric terms
+  ptab <- as.data.frame(sm_env_space$p.table)
+
+  if (nrow(ptab) == 0) {
+    param_tab <- tibble(
+      family = character(),
+      term = character(),
+      estimate = numeric(),
+      std_error = numeric(),
+      statistic = numeric(),
+      p_value = numeric()
+    )
+  } else {
+    ptab$term <- rownames(ptab)
+    rownames(ptab) <- NULL
+
+    param_tab <- ptab %>%
+      as_tibble() %>%
+      rename(
+        estimate = Estimate,
+        std_error = `Std. Error`,
+        statistic = `t value`,
+        p_value = `Pr(>|t|)`
+      ) %>%
+      filter(term != "(Intercept)") %>%
+      mutate(family = fam_name) %>%
+      select(family, term, estimate, std_error, statistic, p_value)
+  }
+
+  list(
+    smooth = smooth_tab,
+    param = param_tab
+  )
+}
+
+top_fams <- family_env_dat %>%
+  group_by(family) %>%
+  summarise(total_family_abundance = sum(family_abundance, na.rm = TRUE), .groups = "drop") %>%
+  slice_max(total_family_abundance, n = 6) %>%
+  pull(family)
+
+env_results_list <- top_fams %>%
+  set_names() %>%
+  map(~{
+    d <- family_env_dat %>%
+      filter(family == .x)
+    fit_family_env_gam(d, fam_name = .x, predictors = model_predictors)
+  })
+
+family_env_smooth <- map_dfr(env_results_list, "smooth") %>%
+  mutate(
+    p_dist_bh = p.adjust(p_dist, method = "BH"),
+    p_space_bh = p.adjust(p_space, method = "BH"),
+    nonlinear_dist = edf_dist > 1
+  ) %>%
+  arrange(p_space_bh, p_dist_bh)
+
+family_env_param <- map_dfr(env_results_list, "param") %>%
+  group_by(term) %>%
+  mutate(p_adj_bh = p.adjust(p_value, method = "BH")) %>%
+  ungroup() %>%
+  arrange(term, p_adj_bh)
+
+family_env_smooth
+family_env_param
+sm_test <- summary(
+  gam(
+    cbind(family_abundance, other_abundance) ~
+      s(dist_to_current_m, k = 4) + p_h_2 + p + k + ca +
+      elevation + slope + topographic_wetness_index_usgs +
+      topographic_position_index + ndvi_sept_2022 +
+      s(x_utm, y_utm, k = 15),
+    data = family_env_dat %>% filter(family == top_fams[1]) %>% drop_na(),
+    family = quasibinomial(),
+    method = "REML"
+  )
+)
+
+colnames(as.data.frame(sm_test$p.table))
+
+family_env_param %>%
+  arrange(p_adj_bh, p_value)
+family_env_param %>%
+  filter(p_adj_bh < 0.05) %>%
+  arrange(term, p_adj_bh)
+
+```
+
+```{r}
+#cyperaceae and poaceae
+
+fit_full_family_model <- function(fam_name, dat, predictors) {
+  d <- dat %>%
+    filter(family == fam_name) %>%
+    mutate(other_abundance = total_abundance - family_abundance) %>%
+    select(any_of(c(
+      "family_abundance", "other_abundance",
+      "dist_to_current_m", "x_utm", "y_utm",
+      predictors
+    ))) %>%
+    mutate(across(everything(), as.numeric)) %>%
+    drop_na()
+
+  f_env_space <- as.formula(
+    paste(
+      "cbind(family_abundance, other_abundance) ~ s(dist_to_current_m, k = 4) +",
+      paste(predictors, collapse = " + "),
+      "+ s(x_utm, y_utm, k = 15)"
+    )
+  )
+
+  mod <- gam(
+    f_env_space,
+    data = d,
+    family = quasibinomial(),
+    method = "REML"
+  )
+
+  list(data = d, model = mod)
+}
+
+make_partial_distance_pred <- function(fam_name, dat, predictors) {
+  out <- fit_full_family_model(fam_name, dat, predictors)
+
+  d <- out$data
+  mod <- out$model
+
+  newdat <- tibble(
+    dist_to_current_m = seq(
+      min(d$dist_to_current_m, na.rm = TRUE),
+      max(d$dist_to_current_m, na.rm = TRUE),
+      length.out = 200
+    ),
+    x_utm = median(d$x_utm, na.rm = TRUE),
+    y_utm = median(d$y_utm, na.rm = TRUE)
+  )
+
+  for (v in predictors) {
+    newdat[[v]] <- median(d[[v]], na.rm = TRUE)
+  }
+
+  pr <- predict(mod, newdata = newdat, type = "link", se.fit = TRUE)
+
+  newdat %>%
+    mutate(
+      family = fam_name,
+      fit = plogis(pr$fit),
+      lower = plogis(pr$fit - 1.96 * pr$se.fit),
+      upper = plogis(pr$fit + 1.96 * pr$se.fit)
+    )
+}
+
+partial_preds <- bind_rows(
+  make_partial_distance_pred("Poaceae", family_env_dat, model_predictors),
+  make_partial_distance_pred("Cyperaceae", family_env_dat, model_predictors)
+)
+
+ggplot(partial_preds, aes(x = dist_to_current_m, y = fit)) +
+  geom_ribbon(aes(ymin = lower, ymax = upper), alpha = 0.2) +
+  geom_line(linewidth = 1) +
+  facet_wrap(~ family, scales = "free_y") +
+  scale_y_continuous(labels = percent_format(accuracy = 1)) +
+  labs(
+    x = "Distance to disturbance (m)",
+    y = "Predicted family proportion\n(holding other covariates constant)"
+  ) +
+  theme_minimal()
+
+plot_points <- family_env_dat %>%
+  filter(family %in% c("Poaceae", "Cyperaceae")) %>%
+  mutate(family_prop = family_abundance / total_abundance)
+
+ggplot() +
+  geom_point(
+    data = plot_points,
+    aes(x = dist_to_current_m, y = family_prop),
+    alpha = 0.18,
+    size = 1
+  ) +
+  geom_ribbon(
+    data = partial_preds,
+    aes(x = dist_to_current_m, ymin = lower, ymax = upper),
+    alpha = 0.2
+  ) +
+  geom_line(
+    data = partial_preds,
+    aes(x = dist_to_current_m, y = fit),
+    linewidth = 1
+  ) +
+  facet_wrap(~ family, scales = "free_y") +
+  scale_y_continuous(labels = percent_format(accuracy = 1)) +
+  labs(
+    x = "Distance to disturbance (m)",
+    y = "Family proportion"
+  ) +
+  theme_minimal()
+
+# plot_smooth_term <- function(fam_name, dat, predictors) {
+#   out <- fit_full_family_model(fam_name, dat, predictors)
+#   d <- out$data
+#   mod <- out$model
+# 
+#   newdat <- tibble(
+#     dist_to_current_m = seq(
+#       min(d$dist_to_current_m, na.rm = TRUE),
+#       max(d$dist_to_current_m, na.rm = TRUE),
+#       length.out = 200
+#     ),
+#     x_utm = median(d$x_utm, na.rm = TRUE),
+#     y_utm = median(d$y_utm, na.rm = TRUE)
+#   )
+# 
+#   for (v in predictors) {
+#     newdat[[v]] <- median(d[[v]], na.rm = TRUE)
+#   }
+# 
+#   term_pred <- predict(
+#     mod,
+#     newdata = newdat,
+#     type = "terms",
+#     se.fit = TRUE
+#   )
+# 
+#   term_name <- grep("dist_to_current_m", colnames(term_pred$fit), value = TRUE)
+# 
+#   tibble(
+#     family = fam_name,
+#     dist_to_current_m = newdat$dist_to_current_m,
+#     fit = term_pred$fit[, term_name],
+#     se = term_pred$se.fit[, term_name],
+#     lower = fit - 1.96 * se,
+#     upper = fit + 1.96 * se
+#   )
+# }
+# 
+# smooth_terms <- bind_rows(
+#   plot_smooth_term("Poaceae", family_env_dat, model_predictors),
+#   plot_smooth_term("Cyperaceae", family_env_dat, model_predictors)
+# )
+# 
+# ggplot(smooth_terms, aes(x = dist_to_current_m, y = fit)) +
+#   geom_ribbon(aes(ymin = lower, ymax = upper), alpha = 0.2) +
+#   geom_line(linewidth = 1) +
+#   facet_wrap(~ family, scales = "free_y") +
+#   labs(
+#     x = "Distance to disturbance (m)",
+#     y = "Partial smooth effect on link scale"
+#   ) +
+#   theme_minimal()
+
+ggplot(
+  plot_points,
+  aes(x = dist_to_current_m, y = family_prop)
+) +
+  geom_point(alpha = 0.18, size = 1) +
+  geom_smooth(method = "gam", formula = y ~ s(x, k = 4), se = TRUE) +
+  facet_wrap(~ family, scales = "free_y") +
+  scale_y_continuous(labels = percent_format(accuracy = 1)) +
+  theme_minimal()
+
+#poaceae:
+ggplot(
+  family_env_dat %>% filter(family == "Poaceae"),
+  aes(x = dist_to_current_m)
+) +
+  geom_histogram(bins = 20) +
+  theme_minimal()
+
+#sparse 200-400, poor structure and fit. cannot signal disturbance
+
+#cyperaceae:
+
+cyper_dat <- family_env_dat %>%
+  filter(family == "Cyperaceae") %>%
+  mutate(other_abundance = total_abundance - family_abundance) %>%
+  select(
+    family_abundance, other_abundance,
+    dist_to_current_m, x_utm, y_utm,
+    p_h_2, p, k, ca,
+    elevation, slope,
+    topographic_wetness_index_usgs,
+    topographic_position_index,
+    ndvi_sept_2022
+  ) %>%
+  mutate(across(everything(), as.numeric)) %>%
+  drop_na()
+m1 <- gam(
+  cbind(family_abundance, other_abundance) ~
+    s(dist_to_current_m, k = 4) +
+    p_h_2 + p + k + ca +
+    elevation + slope +
+    topographic_wetness_index_usgs +
+    topographic_position_index +
+    ndvi_sept_2022 +
+    s(x_utm, y_utm, k = 15),
+  data = cyper_dat,
+  family = quasibinomial(),
+  method = "REML"
+)
+
+summary(m1)
+
+m2 <- gam(
+  cbind(family_abundance, other_abundance) ~
+    s(dist_to_current_m, k = 4) +
+    p_h_2 + p + k + ca +
+    elevation + slope +
+    s(topographic_wetness_index_usgs, k = 4) +
+    topographic_position_index +
+    ndvi_sept_2022 +
+    s(x_utm, y_utm, k = 15),
+  data = cyper_dat,
+  family = quasibinomial(),
+  method = "REML"
+)
+
+summary(m2)
+
+m3 <- gam(
+  cbind(family_abundance, other_abundance) ~
+    s(dist_to_current_m, k = 4) +
+    p_h_2 + p + k + ca +
+    elevation + slope +
+    s(topographic_wetness_index_usgs, k = 4) +
+    s(topographic_position_index, k = 4) +
+    ndvi_sept_2022 +
+    s(x_utm, y_utm, k = 15),
+  data = cyper_dat,
+  family = quasibinomial(),
+  method = "REML"
+)
+
+summary(m3)
+m4 <- gam(
+  cbind(family_abundance, other_abundance) ~
+    p_h_2 + p + k + ca +
+    elevation + slope +
+    s(topographic_wetness_index_usgs, k = 4) +
+    s(topographic_position_index, k = 4) +
+    ndvi_sept_2022 +
+    s(x_utm, y_utm, k = 15),
+  data = cyper_dat,
+  family = quasibinomial(),
+  method = "REML"
+)
+
+summary(m4)
+
+extract_gam_info <- function(mod, name) {
+  sm <- summary(mod)
+
+  tibble(
+    model = name,
+    dev_exp = sm$dev.expl,
+    smooth = rownames(sm$s.table),
+    edf = sm$s.table[, "edf"],
+    p_value = sm$s.table[, "p-value"]
+  )
+}
+
+bind_rows(
+  extract_gam_info(m1, "m1_baseline"),
+  extract_gam_info(m2, "m2_wetness_smooth"),
+  extract_gam_info(m3, "m3_wetness_tpi_smooth"),
+  extract_gam_info(m4, "m4_no_distance")
+)
+#distance:
+plot(m3, select = 1, shade = TRUE, pages = 1)
+#wetness:
+plot(m3, select = 2, shade = TRUE, pages = 1)
+
+make_partial_pred <- function(mod, dat, focal_var, grid_n = 200) {
+  newdat <- dat[rep(1, grid_n), ]
+
+  for (nm in names(newdat)) {
+    if (is.numeric(newdat[[nm]])) {
+      newdat[[nm]] <- median(dat[[nm]], na.rm = TRUE)
+    }
+  }
+
+  newdat[[focal_var]] <- seq(
+    min(dat[[focal_var]], na.rm = TRUE),
+    max(dat[[focal_var]], na.rm = TRUE),
+    length.out = grid_n
+  )
+
+  pr <- predict(mod, newdata = newdat, type = "link", se.fit = TRUE)
+
+  tibble(
+    x = newdat[[focal_var]],
+    fit = plogis(pr$fit),
+    lower = plogis(pr$fit - 1.96 * pr$se.fit),
+    upper = plogis(pr$fit + 1.96 * pr$se.fit),
+    variable = focal_var
+  )
+}
+
+cyper_dist_pred <- make_partial_pred(m3, cyper_dat, "dist_to_current_m")
+cyper_twi_pred  <- make_partial_pred(m3, cyper_dat, "topographic_wetness_index_usgs")
+
+ggplot(cyper_dist_pred, aes(x = x, y = fit)) +
+  geom_ribbon(aes(ymin = lower, ymax = upper), alpha = 0.2) +
+  geom_line(linewidth = 1) +
+  labs(
+    x = "Distance to disturbance (m)",
+    y = "Predicted Cyperaceae proportion"
+  ) +
+  theme_minimal()
+
+ggplot(cyper_twi_pred, aes(x = x, y = fit)) +
+  geom_ribbon(aes(ymin = lower, ymax = upper), alpha = 0.2) +
+  geom_line(linewidth = 1) +
+  labs(
+    x = "Topographic Wetness Index",
+    y = "Predicted Cyperaceae proportion"
+  ) +
+  theme_minimal()
+
+#plot map of cyperaceae abundance across field site:
+
+plot_dat <- family_env_dat %>%
+  filter(family == "Cyperaceae") %>%
+  mutate(family_prop = family_abundance / total_abundance)
+ggplot(plot_dat, aes(x = x_utm, y = y_utm, color = family_prop)) +
+  geom_point(size = 2, alpha = 0.7) +
+  scale_color_viridis_c() +  
+  labs(
+    x = "Easting (m)",
+    y = "Northing (m)",
+    color = "Cyperaceae proportion"
+  ) +
+  theme_minimal()
+#Cyperaceae were concentrated nearer disturbance features, but this pattern was not clearly separable from hydrologic structure because many disturbances occurred in stream-adjacent areas. When disturbance distance was omitted, topographic wetness became a significant nonlinear predictor, indicating that Cyperaceae were likely responding to a coupled disturbance-moisture gradient rather than disturbance alone.
+
+cyper_dat %>%
+  summarise(
+    rho = cor(dist_to_current_m, topographic_wetness_index_usgs,
+              method = "spearman", use = "pairwise.complete.obs")
+  )
+# distance and wetness are not correlated, rho -0.02, so the fact that both are significant in the model suggests they are capturing different aspects of the environment that influence Cyperaceae abundance.
+
+#-----------------------------
+# helper: partial prediction
+#-----------------------------
+make_partial_pred <- function(mod, dat, focal_var, grid_n = 200) {
+  newdat <- dat[rep(1, grid_n), , drop = FALSE]
+
+  # hold numeric predictors constant at medians
+  for (nm in names(newdat)) {
+    if (is.numeric(newdat[[nm]])) {
+      newdat[[nm]] <- median(dat[[nm]], na.rm = TRUE)
+    }
+  }
+
+  # vary focal predictor across observed range
+  newdat[[focal_var]] <- seq(
+    min(dat[[focal_var]], na.rm = TRUE),
+    max(dat[[focal_var]], na.rm = TRUE),
+    length.out = grid_n
+  )
+
+  pr <- predict(mod, newdata = newdat, type = "link", se.fit = TRUE)
+
+  tibble(
+    x = newdat[[focal_var]],
+    fit = plogis(pr$fit),
+    lower = plogis(pr$fit - 1.96 * pr$se.fit),
+    upper = plogis(pr$fit + 1.96 * pr$se.fit),
+    variable = focal_var
+  )
+}
+
+#-----------------------------
+# build plotting data
+#-----------------------------
+cyper_plot_raw <- family_env_dat %>%
+  filter(family == "Cyperaceae") %>%
+  mutate(
+    family_prop = family_abundance / total_abundance
+  )
+
+cyper_dist_pred <- make_partial_pred(m3, cyper_dat, "dist_to_current_m")
+cyper_twi_pred  <- make_partial_pred(m3, cyper_dat, "topographic_wetness_index_usgs")
+
+#-----------------------------
+# common theme
+#-----------------------------
+theme_cyper <- theme_minimal(base_size = 13) +
+  theme(
+    panel.grid.minor = element_blank(),
+    panel.grid.major.x = element_blank(),
+    strip.text = element_text(face = "bold"),
+    axis.title = element_text(face = "bold"),
+    plot.title = element_text(face = "bold", size = 14),
+    plot.subtitle = element_text(size = 11),
+    plot.caption = element_text(size = 10, hjust = 0),
+    legend.position = "none"
+  )
+
+#-----------------------------
+# panel 1: distance effect
+#-----------------------------
+p_dist <- ggplot() +
+  geom_point(
+    data = cyper_plot_raw,
+    aes(x = dist_to_current_m, y = family_prop),
+    alpha = 0.18,
+    size = 1.8
+  ) +
+  geom_ribbon(
+    data = cyper_dist_pred,
+    aes(x = x, ymin = lower, ymax = upper),
+    alpha = 0.22
+  ) +
+  geom_line(
+    data = cyper_dist_pred,
+    aes(x = x, y = fit),
+    linewidth = 1.1
+  ) +
+  scale_y_continuous(
+    labels = percent_format(accuracy = 1),
+    limits = c(0, NA),
+    expand = expansion(mult = c(0, 0.05))
+  ) +
+  labs(
+    title = "Distance to disturbance",
+    x = "Distance to disturbance (m)",
+    y = "Predicted Cyperaceae proportion"
+  ) +
+  theme_cyper
+
+#-----------------------------
+# panel 2: wetness effect
+#-----------------------------
+p_twi <- ggplot() +
+  geom_point(
+    data = cyper_plot_raw,
+    aes(x = topographic_wetness_index_usgs, y = family_prop),
+    alpha = 0.18,
+    size = 1.8
+  ) +
+  geom_ribbon(
+    data = cyper_twi_pred,
+    aes(x = x, ymin = lower, ymax = upper),
+    alpha = 0.22
+  ) +
+  geom_line(
+    data = cyper_twi_pred,
+    aes(x = x, y = fit),
+    linewidth = 1.1
+  ) +
+  scale_y_continuous(
+    labels = percent_format(accuracy = 1),
+    limits = c(0, NA),
+    expand = expansion(mult = c(0, 0.05))
+  ) +
+  labs(
+    title = "Topographic wetness",
+    x = "Topographic Wetness Index",
+    y = NULL
+  ) +
+  theme_cyper
+
+#-----------------------------
+# combine panels
+#-----------------------------
+library(patchwork)
+p_dist <- p_dist +
+  annotate("text", x = Inf, y = Inf,
+           label = "edf = 2.30\np = 0.0078",
+           hjust = 1.1, vjust = 1.4, size = 4)
+
+p_twi <- p_twi +
+  annotate("text", x = Inf, y = Inf,
+           label = "edf = 1.18\np = 0.639",
+           hjust = 1.1, vjust = 1.4, size = 4)
+cyper_fig <- p_dist + p_twi +
+  plot_annotation(
+    title = "Adjusted partial effects for Cyperaceae",
+    subtitle = paste(
+      "Lines show model-predicted Cyperaceae proportion from the spatial GAM;",
+      "other covariates held at typical values."
+    ),
+    caption = paste(
+      "Points are raw observed proportions for context only.",
+      "Shaded ribbons show 95% confidence intervals."
+    )
+  )
+
+cyper_fig
+
+
+```
+
+
+
+
+
+
+
+
+
+
