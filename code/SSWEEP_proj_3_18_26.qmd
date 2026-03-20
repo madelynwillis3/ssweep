@@ -2153,8 +2153,128 @@ cyper_fig <- p_dist + p_twi +
 
 cyper_fig
 
+#Cyperaceae proportion declined nonlinearly with distance from disturbance after accounting for selected soil, terrain, spectral, and spatial covariates. However, because disturbance features partially overlapped wetter, stream-associated portions of the field, the result is interpreted as evidence of Cyperaceae responding to disturbance proximity within a coupled disturbance-hydrology context rather than as an isolated disturbance effect.
+
 
 ```
+
+```{r}
+#hydro cyperaceae:
+cyper_dat <- family_env_dat %>%
+  filter(family == "Cyperaceae") %>%
+  mutate(other_abundance = total_abundance - family_abundance) %>%
+  select(
+    family_abundance, other_abundance,
+    dist_to_current_m, x_utm, y_utm,
+    p_h_2, p, k, ca,
+    ndvi_sept_2022,
+    topographic_wetness_index_usgs,
+    flow_accumulation_usgs,
+    vertical_distance_to_channel_network,
+    mrvbf,
+    overland_flow_distance
+  ) %>%
+  mutate(across(everything(), as.numeric)) %>%
+  drop_na()
+
+m_base <- gam(
+  cbind(family_abundance, other_abundance) ~
+    s(dist_to_current_m, k = 4) +
+    p_h_2 + p + k + ca +
+    ndvi_sept_2022 +
+    s(x_utm, y_utm, k = 15),
+  data = cyper_dat,
+  family = quasibinomial(),
+  method = "REML"
+)
+
+m_twi <- gam(
+  cbind(family_abundance, other_abundance) ~
+    s(dist_to_current_m, k = 4) +
+    s(topographic_wetness_index_usgs, k = 4) +
+    p_h_2 + p + k + ca +
+    ndvi_sept_2022 +
+    s(x_utm, y_utm, k = 15),
+  data = cyper_dat,
+  family = quasibinomial(),
+  method = "REML"
+)
+
+m_flowacc <- gam(
+  cbind(family_abundance, other_abundance) ~
+    s(dist_to_current_m, k = 4) +
+    s(flow_accumulation_usgs, k = 4) +
+    p_h_2 + p + k + ca +
+    ndvi_sept_2022 +
+    s(x_utm, y_utm, k = 15),
+  data = cyper_dat,
+  family = quasibinomial(),
+  method = "REML"
+)
+
+m_vdcn <- gam(
+  cbind(family_abundance, other_abundance) ~
+    s(dist_to_current_m, k = 4) +
+    s(vertical_distance_to_channel_network, k = 4) +
+    p_h_2 + p + k + ca +
+    ndvi_sept_2022 +
+    s(x_utm, y_utm, k = 15),
+  data = cyper_dat,
+  family = quasibinomial(),
+  method = "REML"
+)
+
+m_mrvbf <- gam(
+  cbind(family_abundance, other_abundance) ~
+    s(dist_to_current_m, k = 4) +
+    s(mrvbf, k = 4) +
+    p_h_2 + p + k + ca +
+    ndvi_sept_2022 +
+    s(x_utm, y_utm, k = 15),
+  data = cyper_dat,
+  family = quasibinomial(),
+  method = "REML"
+)
+
+m_hydro <- gam(
+  cbind(family_abundance, other_abundance) ~
+    s(dist_to_current_m, k = 4) +
+    s(topographic_wetness_index_usgs, k = 4) +
+    s(flow_accumulation_usgs, k = 4) +
+    s(vertical_distance_to_channel_network, k = 4) +
+    s(mrvbf, k = 4) +
+    p_h_2 + p + k + ca +
+    ndvi_sept_2022 +
+    s(x_utm, y_utm, k = 15),
+  data = cyper_dat,
+  family = quasibinomial(),
+  method = "REML"
+)
+
+extract_gam_info <- function(mod, model_name) {
+  sm <- summary(mod)
+  tibble(
+    model = model_name,
+    dev_exp = sm$dev.expl,
+    smooth = rownames(sm$s.table),
+    edf = sm$s.table[, "edf"],
+    p_value = sm$s.table[, "p-value"]
+  )
+}
+
+bind_rows(
+  extract_gam_info(m_base, "base"),
+  extract_gam_info(m_twi, "plus_twi"),
+  extract_gam_info(m_flowacc, "plus_flowacc"),
+  extract_gam_info(m_vdcn, "plus_vdcn"),
+  extract_gam_info(m_mrvbf, "plus_mrvbf")
+  # add m_hydro if you fit it
+) %>%
+  arrange(model)
+
+#Cyperaceae proportion declined with increasing distance from disturbance, and this relationship remained significant after accounting for multiple hydrologic and terrain-based covariates, including flow accumulation, valley-bottom position, topographic wetness, and vertical distance to channel network.
+```
+
 
 
 
