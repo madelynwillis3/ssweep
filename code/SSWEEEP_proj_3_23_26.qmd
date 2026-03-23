@@ -2456,11 +2456,14 @@ vg_sedge$metrics
 season_point <- weed_trait_long %>%
   filter(!is.na(season), season != "", !is.na(weed_count), weed_count > 0) %>%
   group_by(row_num, season) %>%
-  summarise(season_abundance = sum(weed_count, na.rm = TRUE), .groups = "drop") %>%
-  left_join(point_totals_type, by = "row_num") %>%
-  mutate(prop = season_abundance / total_abundance) %>%
-  select(row_num, season, prop) %>%
-  pivot_wider(names_from = season, values_from = prop, values_fill = 0, names_prefix = "prop_")
+  summarise(abund = sum(weed_count, na.rm = TRUE), .groups = "drop") %>%
+  pivot_wider(
+    names_from = season,
+    values_from = abund,
+    values_fill = 0,
+    names_prefix = "season_"
+  ) %>%
+  janitor::clean_names()
 
 analysis_season <- analysis_dat %>%
   left_join(season_point, by = "row_num")
