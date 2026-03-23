@@ -1,0 +1,3038 @@
+---
+title: "SSWEEEP_proj_3_23_26"
+format: html
+---
+
+#### Libraries:
+
+```{r setup, message=FALSE, warning=FALSE}
+library(tidyverse)
+library(janitor)
+library(sf)
+library(terra)
+library(readxl)
+library(leaflet)
+library(htmltools)
+library(scales)
+library(viridis)
+library(ranger)
+library(randomForest)
+library(purrr)
+library(reshape2)
+library(vegan)
+library(mgcv)
+library(broom)
+```
+
+```{r data_import, message=FALSE, warning=FALSE}
+# raw data
+weed_id_tax <- read_excel("../data/SSWEEP_data_with_tax_and_indices_02_2026.xlsx", sheet = "SSWEEP")
+weed_idx    <- read_excel("../data/SSWEEP_data_with_tax_and_indices_02_2026.xlsx", sheet = "Calculations for each grid")
+weed_id     <- read_csv("../data/SSWEEP_weed_id_count_data.csv")
+surface_sampling <- read_csv("../data/SSWEEP_surface_SP_samples.csv")
+
+# known correction:
+# pedology_lab_id 240683 was mislabeled as 136J and should be 124J
+surface_sampling <- surface_sampling %>%
+  mutate(
+    row_num = as.character(row_num),
+    row_num = if_else(pedology_lab_id == 240683, "124J", row_num)
+  )
+
+# optional raster covariates
+current_dist <- rast("../data/disturbance/currently_dist_binary.tif")
+covariates   <- rast("../data/covars/covariate_stack_3m.tif")
+names(covariates) <- make.names(names(covariates))
+```
+
+```{r}
+weed_id_tax <- weed_id_tax %>%
+  select(1:143) %>%
+  slice(1:72)
+
+weed_id_long <- weed_id_tax %>%
+  pivot_longer(
+    cols = -c("Common Name", "Genus", "Species", "Family", "Life Cycle", "Season", "Type"),
+    names_to = "row_num",
+    values_to = "weed_count"
+  ) %>%
+  rename(weed_species = `Common Name`) %>%
+  mutate(
+    row_num = as.character(row_num),
+    weed_count = as.numeric(weed_count)
+  )
+
+surface_sampling_weed <- surface_sampling %>%
+  mutate(row_num = as.character(row_num)) %>%
+  left_join(weed_id_long, by = "row_num") %>%
+  clean_names()
+```
+```{r}
+ssweep <- read_excel("../data/SSWEEP_data_with_tax_and_indices_02_2026.xlsx", sheet = "SSWEEP")
+
+grid_cols <- names(ssweep)[str_detect(names(ssweep), "^\\d+[A-Za-z]+$")]
+
+idx_rows <- c(
+  "Simpson's diversity index",
+  "Shannon Weiner diversity index",
+  "Pielou's evenness index",
+  "Berger-Parker dominance index"
+)
+
+idx_by_point <- ssweep %>%
+  filter(`Common Name` %in% idx_rows) %>%
+  mutate(idx_name = make_clean_names(`Common Name`)) %>%
+  mutate(idx_name = make.unique(idx_name)) %>%
+  select(idx_name, all_of(grid_cols)) %>%
+  pivot_longer(all_of(grid_cols), names_to = "row_num", values_to = "value") %>%
+  mutate(
+    row_num = as.character(row_num),
+    value = as.numeric(value)
+  ) %>%
+  pivot_wider(names_from = idx_name, values_from = value) %>%
+  clean_names()
+
+surface_sampling_idx <- surface_sampling %>%
+  mutate(row_num = as.character(row_num)) %>%
+  left_join(idx_by_point, by = "row_num") %>%
+  clean_names() %>%
+  select(-berger_parker_dominance_index) %>%
+  rename(berger_parker_dominance_index = berger_parker_dominance_index_2)
+
+surface_sampling %>%
+  count(row_num, sort = TRUE) %>%
+  filter(n > 1)
+
+surface_sampling_idx %>%
+  count(row_num, sort = TRUE) %>%
+  filter(n > 1)
+
+surface_sampling %>%
+  filter(row_num %in% c("124J", "136J")) %>%
+  arrange(row_num, pedology_lab_id)
+
+surface_sampling_idx %>%
+  filter(row_num %in% c("124J", "136J")) %>%
+  arrange(row_num, pedology_lab_id)
+```
+
+
+```{r}
+soil_vars <- c("lbc", "lbc_eq", "p_h_2", "ca", "k", "mg", "mn", "p", "zn")
+
+lev <- levels(current_dist)[[1]]
+id_col <- names(lev)[1]
+yes_id <- lev[[id_col]][lev$CurrentDis == "Yes"]
+
+current_dist_bin <- ifel(current_dist == yes_id, 1, 0)
+names(current_dist_bin) <- "dist_current"
+
+target <- ifel(current_dist_bin == 1, 1, NA)
+dist_to_dist <- distance(target)
+names(dist_to_dist) <- "dist_to_current_m"
+
+soil_pts_ll <- surface_sampling %>%
+  select(row_num, x, y, all_of(soil_vars)) %>%
+  mutate(row_num = as.character(row_num)) %>%
+  st_as_sf(coords = c("x", "y"), crs = 4326)
+
+soil_pts_utm <- st_transform(soil_pts_ll, crs(current_dist_bin))
+
+coord_lookup <- soil_pts_utm %>%
+  mutate(
+    x_utm = st_coordinates(geometry)[,1],
+    y_utm = st_coordinates(geometry)[,2]
+  ) %>%
+  st_drop_geometry() %>%
+  clean_names() %>%
+  select(row_num, x_utm, y_utm)
+
+dist_vals  <- terra::extract(current_dist_bin, vect(soil_pts_utm)) %>% select(-ID)
+dist_dvals <- terra::extract(dist_to_dist, vect(soil_pts_utm)) %>% select(-ID)
+
+soil_dist <- soil_pts_utm %>%
+  st_drop_geometry() %>%
+  bind_cols(dist_vals, dist_dvals) %>%
+  clean_names()
+
+point_base <- soil_dist %>%
+  mutate(row_num = as.character(row_num))
+```
+
+```{r}
+soil_pts_cov <- terra::extract(covariates, vect(soil_pts_utm), bind = TRUE) %>%
+  st_as_sf()
+
+soil_pts_cov_df <- soil_pts_cov %>%
+  st_drop_geometry() %>%
+  clean_names() %>%
+  mutate(row_num = as.character(row_num))
+
+candidate_covars <- c(
+  "elevation", "dem", "slope", "aspect", "twi", "ndvi",
+  "spi", "tri", "roughness", "curvature",
+  "topographic_wetness_index_usgs",
+  "topographic_position_index",
+  "flow_accumulation_usgs",
+  "stream_power_index",
+  "vertical_distance_to_channel_network",
+  "ndvi_sept_2022"
+)
+
+covar_vars <- intersect(candidate_covars, names(soil_pts_cov_df))
+```
+
+
+
+```{r}
+weed_trait_long <- surface_sampling_weed %>%
+  transmute(
+    row_num      = as.character(row_num),
+    weed_species = str_squish(as.character(weed_species)),
+    family       = str_squish(as.character(family)),
+    genus        = str_squish(as.character(genus)),
+    species      = str_squish(as.character(species)),
+    life_cycle   = str_squish(as.character(life_cycle)),
+    season       = str_squish(as.character(season)),
+    type         = str_squish(as.character(type)),
+    weed_count   = as.numeric(weed_count)
+  ) %>%
+  filter(!is.na(weed_count)) %>%
+  mutate(
+    life_cycle = case_when(
+      str_detect(str_to_lower(life_cycle), "annual") ~ "Annual",
+      str_detect(str_to_lower(life_cycle), "perennial") ~ "Perennial",
+      TRUE ~ NA_character_
+    ),
+    type = case_when(
+      str_detect(str_to_lower(type), "broad") ~ "Broadleaf",
+      str_detect(str_to_lower(type), "grass") ~ "Grass",
+      str_detect(str_to_lower(type), "sedge") ~ "Sedge",
+      TRUE ~ NA_character_
+    ),
+    season = case_when(
+      str_detect(str_to_lower(season), "warm") ~ "Warm",
+      str_detect(str_to_lower(season), "cool") ~ "Cool",
+      TRUE ~ NA_character_
+    )
+  )
+
+weed_point_summary <- weed_trait_long %>%
+  group_by(row_num) %>%
+  summarise(
+    weed_total_abundance  = sum(weed_count, na.rm = TRUE),
+    weed_species_richness = sum(weed_count > 0, na.rm = TRUE),
+    weed_family_richness  = n_distinct(family[weed_count > 0]),
+    .groups = "drop"
+  )
+
+life_cycle_wide <- weed_trait_long %>%
+  filter(!is.na(life_cycle)) %>%
+  group_by(row_num, life_cycle) %>%
+  summarise(abund = sum(weed_count, na.rm = TRUE), .groups = "drop") %>%
+  pivot_wider(names_from = life_cycle, values_from = abund, values_fill = 0, names_prefix = "life_")
+
+type_wide <- weed_trait_long %>%
+  filter(!is.na(type)) %>%
+  group_by(row_num, type) %>%
+  summarise(abund = sum(weed_count, na.rm = TRUE), .groups = "drop") %>%
+  pivot_wider(names_from = type, values_from = abund, values_fill = 0, names_prefix = "type_")
+
+season_wide <- weed_trait_long %>%
+  filter(!is.na(season)) %>%
+  group_by(row_num, season) %>%
+  summarise(abund = sum(weed_count, na.rm = TRUE), .groups = "drop") %>%
+  pivot_wider(names_from = season, values_from = abund, values_fill = 0, names_prefix = "season_")
+
+stacked_trait_wide <- weed_trait_long %>%
+  mutate(
+    stacked_trait = case_when(
+      !is.na(life_cycle) & !is.na(type) ~ paste(life_cycle, type, sep = "_"),
+      TRUE ~ NA_character_
+    )
+  ) %>%
+  filter(!is.na(stacked_trait)) %>%
+  group_by(row_num, stacked_trait) %>%
+  summarise(abund = sum(weed_count, na.rm = TRUE), .groups = "drop") %>%
+  pivot_wider(names_from = stacked_trait, values_from = abund, values_fill = 0, names_prefix = "trait_")
+
+weed_traits_point <- weed_point_summary %>%
+  left_join(life_cycle_wide, by = "row_num") %>%
+  left_join(type_wide, by = "row_num") %>%
+  left_join(season_wide, by = "row_num") %>%
+  left_join(stacked_trait_wide, by = "row_num") %>%
+  clean_names()
+```
+
+```{r}
+idx_keep <- surface_sampling_idx %>%
+  mutate(row_num = as.character(row_num)) %>%
+  select(
+    row_num,
+    simpsons_diversity_index,
+    shannon_weiner_diversity_index,
+    pielous_evenness_index,
+    berger_parker_dominance_index
+  )
+
+point_env <- point_base %>%
+  left_join(coord_lookup, by = "row_num") %>%
+  left_join(soil_pts_cov_df %>% select(row_num, any_of(covar_vars)), by = "row_num") %>%
+  left_join(idx_keep, by = "row_num") %>%
+  select(
+    row_num,
+    x_utm,
+    y_utm,
+    dist_current,
+    dist_to_current_m,
+    any_of(soil_vars),
+    any_of(covar_vars),
+    simpsons_diversity_index,
+    shannon_weiner_diversity_index,
+    pielous_evenness_index,
+    berger_parker_dominance_index
+  )
+
+analysis_dat <- point_env %>%
+  left_join(weed_traits_point, by = "row_num") %>%
+  mutate(dist_current = as.factor(dist_current))
+```
+```{r}
+weed_family_long <- weed_trait_long %>%
+  transmute(
+    row_num = as.character(row_num),
+    family = str_squish(family),
+    weed_count = as.numeric(weed_count)
+  ) %>%
+  filter(!is.na(weed_count), weed_count > 0, !is.na(family), family != "")
+
+point_totals <- weed_family_long %>%
+  group_by(row_num) %>%
+  summarise(total_abundance = sum(weed_count, na.rm = TRUE), .groups = "drop")
+
+family_point <- weed_family_long %>%
+  group_by(row_num, family) %>%
+  summarise(family_abundance = sum(weed_count, na.rm = TRUE), .groups = "drop") %>%
+  left_join(point_totals, by = "row_num") %>%
+  mutate(family_prop = family_abundance / total_abundance)
+
+family_point_dist <- family_point %>%
+  left_join(point_env %>% select(row_num, dist_to_current_m, x_utm, y_utm), by = "row_num") %>%
+  filter(!is.na(dist_to_current_m), !is.na(x_utm), !is.na(y_utm), total_abundance >= 3)
+
+family_env_dat <- family_point_dist %>%
+  left_join(
+    point_env %>% select(row_num, dist_current, dist_to_current_m, x_utm, y_utm, any_of(soil_vars), any_of(covar_vars)),
+    by = c("row_num", "dist_to_current_m", "x_utm", "y_utm")
+  ) %>%
+  mutate(other_abundance = total_abundance - family_abundance)
+```
+```{r}
+candidate_predictors <- c(
+  "dist_to_current_m",
+  "dist_current",
+  "p_h_2", "p", "k", "ca", "mg", "mn", "zn",
+  "elevation",
+  "slope",
+  "topographic_wetness_index_usgs",
+  "topographic_position_index",
+  "flow_accumulation_usgs",
+  "stream_power_index",
+  "vertical_distance_to_channel_network",
+  "ndvi_sept_2022"
+)
+
+candidate_predictors <- intersect(candidate_predictors, names(family_env_dat))
+
+# numeric-only correlation check
+num_preds <- family_env_dat %>%
+  select(any_of(candidate_predictors)) %>%
+  mutate(across(everything(), ~ as.numeric(as.character(.x))))
+
+cor_mat <- cor(num_preds, use = "pairwise.complete.obs", method = "spearman")
+round(cor_mat, 2)
+
+model_predictors <- c(
+  "p_h_2", "p", "k", "ca", "mg",
+  "elevation", "slope",
+  "topographic_wetness_index_usgs",
+  "flow_accumulation_usgs",
+  "ndvi_sept_2022"
+)
+
+model_predictors <- intersect(model_predictors, names(family_env_dat))
+
+fit_family_env_gam <- function(d, fam_name, predictors) {
+
+  keep_vars <- c(
+    "family_abundance", "other_abundance",
+    "dist_to_current_m", "x_utm", "y_utm",
+    predictors
+  )
+
+  d2 <- d %>%
+    select(any_of(keep_vars)) %>%
+    mutate(across(everything(), as.numeric)) %>%
+    drop_na()
+
+  if (nrow(d2) < 30) {
+    return(list(
+      smooth = tibble(
+        family = fam_name,
+        n = nrow(d2),
+        dev_exp_env = NA_real_,
+        dev_exp_env_space = NA_real_,
+        edf_dist = NA_real_,
+        p_dist = NA_real_,
+        edf_space = NA_real_,
+        p_space = NA_real_
+      ),
+      param = tibble(
+        family = character(),
+        term = character(),
+        estimate = numeric(),
+        std.error = numeric(),
+        statistic = numeric(),
+        p.value = numeric()
+      )
+    ))
+  }
+
+  rhs_env <- paste(
+    c("s(dist_to_current_m, k = 4)", predictors),
+    collapse = " + "
+  )
+
+  rhs_env_space <- paste(
+    c("s(dist_to_current_m, k = 4)", predictors, "s(x_utm, y_utm, k = 15)"),
+    collapse = " + "
+  )
+
+  f_env <- as.formula(
+    paste("cbind(family_abundance, other_abundance) ~", rhs_env)
+  )
+
+  f_env_space <- as.formula(
+    paste("cbind(family_abundance, other_abundance) ~", rhs_env_space)
+  )
+
+  m_env <- gam(
+    f_env,
+    data = d2,
+    family = quasibinomial(),
+    method = "REML"
+  )
+
+  m_env_space <- gam(
+    f_env_space,
+    data = d2,
+    family = quasibinomial(),
+    method = "REML"
+  )
+
+  sm_env <- summary(m_env)
+  sm_env_space <- summary(m_env_space)
+
+  param_tab <- broom::tidy(m_env_space) %>%
+    filter(term != "(Intercept)") %>%
+    mutate(family = fam_name)
+
+  smooth_tab <- tibble(
+    family = fam_name,
+    n = nrow(d2),
+    dev_exp_env = sm_env$dev.expl,
+    dev_exp_env_space = sm_env_space$dev.expl,
+    edf_dist = sm_env_space$s.table[1, "edf"],
+    p_dist = sm_env_space$s.table[1, "p-value"],
+    edf_space = sm_env_space$s.table[nrow(sm_env_space$s.table), "edf"],
+    p_space = sm_env_space$s.table[nrow(sm_env_space$s.table), "p-value"]
+  )
+
+  list(
+    smooth = smooth_tab,
+    param = param_tab
+  )
+}
+
+top_fams <- family_env_dat %>%
+  group_by(family) %>%
+  summarise(total_family_abundance = sum(family_abundance, na.rm = TRUE), .groups = "drop") %>%
+  slice_max(total_family_abundance, n = 6) %>%
+  pull(family)
+
+family_env_top <- family_env_dat %>%
+  filter(family %in% top_fams)
+
+env_results_list <- family_env_top %>%
+  group_split(family) %>%
+  map(~ fit_family_env_gam(
+    d = .x,
+    fam_name = unique(.x$family),
+    predictors = model_predictors
+  ))
+
+family_env_smooth <- map_dfr(env_results_list, "smooth") %>%
+  mutate(
+    p_dist_bh = p.adjust(p_dist, method = "BH"),
+    p_space_bh = p.adjust(p_space, method = "BH"),
+    nonlinear_dist = edf_dist > 1
+  )
+
+family_env_param <- map_dfr(env_results_list, "param") %>%
+  group_by(term) %>%
+  mutate(p_adj_bh = p.adjust(p.value, method = "BH")) %>%
+  ungroup()
+
+family_env_smooth
+family_env_param
+```
+
+```{r}
+# optional: only run if you want the diversity leaflet map
+idx_sf <- st_as_sf(surface_sampling_idx, coords = c("x","y"), crs = 4326)
+
+idx_cols <- names(idx_sf) %>%
+  keep(~ str_detect(.x, "simpson|shannon|pielou|evenness|berger|parker|dominance"))
+
+idx_cols <- idx_cols[idx_cols %in% c(
+  "simpsons_diversity_index",
+  "shannon_weiner_diversity_index",
+  "pielous_evenness_index",
+  "berger_parker_dominance_index"
+)]
+
+popup_all <- purrr::pmap_chr(
+  idx_sf %>% st_drop_geometry() %>% select(row_num, all_of(idx_cols)),
+  function(...) {
+    r <- list(...)
+    rn <- r$row_num
+    r$row_num <- NULL
+
+    lines <- purrr::imap_chr(r, \(v, nm) {
+      if (is.null(v) || is.na(v)) return(paste0("<b>", nm, ":</b> NA"))
+      paste0("<b>", nm, ":</b> ", round(as.numeric(v), 4))
+    })
+
+    paste0("<b>Row:</b> ", rn, "<br>", paste(lines, collapse = "<br>"))
+  }
+)
+
+coords <- st_coordinates(idx_sf)
+
+m <- leaflet(idx_sf) %>%
+  addProviderTiles(providers$Esri.WorldImagery, group = "Imagery") %>%
+  addProviderTiles(providers$CartoDB.Positron, group = "Light")
+
+for (col in idx_cols) {
+  pal <- colorNumeric("viridis", domain = idx_sf[[col]], na.color = "transparent")
+
+  m <- m %>%
+    addCircleMarkers(
+      lng = coords[,1], lat = coords[,2],
+      radius = 7,
+      stroke = TRUE, weight = 1, color = "white",
+      fillColor = pal(idx_sf[[col]]),
+      fillOpacity = 0.9,
+      popup = popup_all,
+      group = col
+    ) %>%
+    addLegend(
+      position = "bottomright",
+      pal = pal,
+      values = idx_sf[[col]],
+      title = col,
+      group = col
+    )
+}
+
+m %>%
+  addLayersControl(
+    baseGroups = c("Imagery", "Light"),
+    overlayGroups = idx_cols,
+    options = layersControlOptions(collapsed = FALSE)
+  ) %>%
+  hideGroup(idx_cols[-1])
+```
+```{r optional-cyperaceae-followup, eval=FALSE, message=FALSE, warning=FALSE}
+library(patchwork)
+
+#-----------------------------
+# Cyperaceae subset
+#-----------------------------
+cyper_dat <- family_env_dat %>%
+  filter(family == "Cyperaceae") %>%
+  mutate(
+    across(c(
+      family_abundance, other_abundance, total_abundance,
+      dist_to_current_m, x_utm, y_utm,
+      any_of(model_predictors)
+    ), as.numeric),
+    family_prop = family_abundance / total_abundance
+  ) %>%
+  drop_na(
+    family_abundance, other_abundance, total_abundance,
+    dist_to_current_m, x_utm, y_utm
+  )
+
+# quick check: are distance and wetness correlated?
+cyper_dat %>%
+  summarise(
+    rho = cor(
+      dist_to_current_m,
+      topographic_wetness_index_usgs,
+      method = "spearman",
+      use = "pairwise.complete.obs"
+    )
+  )
+
+#-----------------------------
+# fit Cyperaceae model
+#-----------------------------
+cyper_preds <- intersect(
+  c(
+    "p_h_2", "p", "k", "ca", "mg",
+    "elevation", "slope",
+    "topographic_wetness_index_usgs",
+    "flow_accumulation_usgs",
+    "ndvi_sept_2022"
+  ),
+  names(cyper_dat)
+)
+
+if (nrow(cyper_dat) >= 30) {
+
+  cyper_formula <- as.formula(
+    paste(
+      "cbind(family_abundance, other_abundance) ~",
+      paste(
+        c(
+          "s(dist_to_current_m, k = 4)",
+          cyper_preds,
+          "s(x_utm, y_utm, k = 15)"
+        ),
+        collapse = " + "
+      )
+    )
+  )
+
+  cyperaceae_mod <- gam(
+    cyper_formula,
+    data = cyper_dat,
+    family = quasibinomial(),
+    method = "REML"
+  )
+
+  cyper_sum <- summary(cyperaceae_mod)
+
+  #-----------------------------
+  # helper: partial prediction
+  #-----------------------------
+  make_partial_pred <- function(mod, dat, focal_var, grid_n = 200) {
+    newdat <- dat[rep(1, grid_n), , drop = FALSE]
+
+    # hold numeric predictors constant at medians
+    for (nm in names(newdat)) {
+      if (is.numeric(newdat[[nm]])) {
+        newdat[[nm]] <- median(dat[[nm]], na.rm = TRUE)
+      }
+    }
+
+    # vary focal predictor across observed range
+    newdat[[focal_var]] <- seq(
+      min(dat[[focal_var]], na.rm = TRUE),
+      max(dat[[focal_var]], na.rm = TRUE),
+      length.out = grid_n
+    )
+
+    pr <- predict(mod, newdata = newdat, type = "link", se.fit = TRUE)
+
+    tibble(
+      x = newdat[[focal_var]],
+      fit = plogis(pr$fit),
+      lower = plogis(pr$fit - 1.96 * pr$se.fit),
+      upper = plogis(pr$fit + 1.96 * pr$se.fit),
+      variable = focal_var
+    )
+  }
+
+  #-----------------------------
+  # build plotting data
+  #-----------------------------
+  cyper_plot_raw <- cyper_dat
+
+  cyper_dist_pred <- make_partial_pred(cyperaceae_mod, cyper_dat, "dist_to_current_m")
+  cyper_twi_pred  <- make_partial_pred(cyperaceae_mod, cyper_dat, "topographic_wetness_index_usgs")
+
+  # extract edf/p values from smooth table safely
+  smooth_terms <- rownames(cyper_sum$s.table)
+
+  dist_row <- which(str_detect(smooth_terms, "dist_to_current_m"))
+  twi_row  <- which(str_detect(smooth_terms, "topographic_wetness_index_usgs"))
+
+  dist_lab <- if (length(dist_row) == 1) {
+    paste0(
+      "edf = ", round(cyper_sum$s.table[dist_row, "edf"], 2),
+      "\np = ", signif(cyper_sum$s.table[dist_row, "p-value"], 3)
+    )
+  } else {
+    NULL
+  }
+
+  twi_lab <- if (length(twi_row) == 1) {
+    paste0(
+      "edf = ", round(cyper_sum$s.table[twi_row, "edf"], 2),
+      "\np = ", signif(cyper_sum$s.table[twi_row, "p-value"], 3)
+    )
+  } else {
+    NULL
+  }
+
+  #-----------------------------
+  # common theme
+  #-----------------------------
+  theme_cyper <- theme_minimal(base_size = 13) +
+    theme(
+      panel.grid.minor = element_blank(),
+      panel.grid.major.x = element_blank(),
+      strip.text = element_text(face = "bold"),
+      axis.title = element_text(face = "bold"),
+      plot.title = element_text(face = "bold", size = 14),
+      plot.subtitle = element_text(size = 11),
+      plot.caption = element_text(size = 10, hjust = 0),
+      legend.position = "none"
+    )
+
+  #-----------------------------
+  # panel 1: distance effect
+  #-----------------------------
+  p_dist <- ggplot() +
+    geom_point(
+      data = cyper_plot_raw,
+      aes(x = dist_to_current_m, y = family_prop),
+      alpha = 0.18,
+      size = 1.8
+    ) +
+    geom_ribbon(
+      data = cyper_dist_pred,
+      aes(x = x, ymin = lower, ymax = upper),
+      alpha = 0.22
+    ) +
+    geom_line(
+      data = cyper_dist_pred,
+      aes(x = x, y = fit),
+      linewidth = 1.1
+    ) +
+    scale_y_continuous(
+      labels = percent_format(accuracy = 1),
+      limits = c(0, NA),
+      expand = expansion(mult = c(0, 0.05))
+    ) +
+    labs(
+      title = "Distance to disturbance",
+      x = "Distance to disturbance (m)",
+      y = "Predicted Cyperaceae proportion"
+    ) +
+    theme_cyper
+
+  if (!is.null(dist_lab)) {
+    p_dist <- p_dist +
+      annotate(
+        "text",
+        x = Inf, y = Inf,
+        label = dist_lab,
+        hjust = 1.1, vjust = 1.4, size = 4
+      )
+  }
+
+  #-----------------------------
+  # panel 2: wetness effect
+  #-----------------------------
+  p_twi <- ggplot() +
+    geom_point(
+      data = cyper_plot_raw,
+      aes(x = topographic_wetness_index_usgs, y = family_prop),
+      alpha = 0.18,
+      size = 1.8
+    ) +
+    geom_ribbon(
+      data = cyper_twi_pred,
+      aes(x = x, ymin = lower, ymax = upper),
+      alpha = 0.22
+    ) +
+    geom_line(
+      data = cyper_twi_pred,
+      aes(x = x, y = fit),
+      linewidth = 1.1
+    ) +
+    scale_y_continuous(
+      labels = percent_format(accuracy = 1),
+      limits = c(0, NA),
+      expand = expansion(mult = c(0, 0.05))
+    ) +
+    labs(
+      title = "Topographic wetness",
+      x = "Topographic Wetness Index",
+      y = NULL
+    ) +
+    theme_cyper
+
+  if (!is.null(twi_lab)) {
+    p_twi <- p_twi +
+      annotate(
+        "text",
+        x = Inf, y = Inf,
+        label = twi_lab,
+        hjust = 1.1, vjust = 1.4, size = 4
+      )
+  }
+
+  #-----------------------------
+  # combine panels
+  #-----------------------------
+  cyper_fig <- p_dist + p_twi +
+    plot_annotation(
+      title = "Adjusted partial effects for Cyperaceae",
+      subtitle = paste(
+        "Lines show model-predicted Cyperaceae proportion from the spatial GAM;",
+        "other covariates held at typical values."
+      ),
+      caption = paste(
+        "Points are raw observed proportions for context only.",
+        "Shaded ribbons show 95% confidence intervals."
+      )
+    )
+
+  cyper_fig
+}
+```
+#### summaries:
+
+```{r}
+family_summary <- weed_trait_long %>%
+  group_by(family) %>%
+  summarise(
+    total_weed_count = sum(weed_count, na.rm = TRUE),
+    n_points_present = n_distinct(row_num[weed_count > 0]),
+    .groups = "drop"
+  ) %>%
+  arrange(desc(total_weed_count))
+
+genus_summary <- weed_trait_long %>%
+  group_by(genus) %>%
+  summarise(
+    total_weed_count = sum(weed_count, na.rm = TRUE),
+    n_points_present = n_distinct(row_num[weed_count > 0]),
+    .groups = "drop"
+  ) %>%
+  arrange(desc(total_weed_count))
+
+life_cycle_summary <- weed_trait_long %>%
+  group_by(life_cycle) %>%
+  summarise(
+    total_weed_count = sum(weed_count, na.rm = TRUE),
+    n_points_present = n_distinct(row_num[weed_count > 0]),
+    .groups = "drop"
+  ) %>%
+  arrange(desc(total_weed_count))
+
+season_summary <- weed_trait_long %>%
+  group_by(season) %>%
+  summarise(
+    total_weed_count = sum(weed_count, na.rm = TRUE),
+    n_points_present = n_distinct(row_num[weed_count > 0]),
+    .groups = "drop"
+  ) %>%
+  arrange(desc(total_weed_count))
+
+type_summary <- weed_trait_long %>%
+  group_by(type) %>%
+  summarise(
+    total_weed_count = sum(weed_count, na.rm = TRUE),
+    n_points_present = n_distinct(row_num[weed_count > 0]),
+    .groups = "drop"
+  ) %>%
+  arrange(desc(total_weed_count))
+
+family_summary
+genus_summary
+life_cycle_summary
+season_summary
+type_summary
+
+```
+
+```{r optional-sedge-followup, eval=FALSE, message=FALSE, warning=FALSE}
+library(patchwork)
+
+#-----------------------------
+# Build sedge point-level table
+#-----------------------------
+type_point <- weed_trait_long %>%
+  filter(!is.na(type), type != "", !is.na(weed_count), weed_count > 0) %>%
+  group_by(row_num, type) %>%
+  summarise(type_abundance = sum(weed_count, na.rm = TRUE), .groups = "drop")
+
+point_totals_type <- weed_trait_long %>%
+  filter(!is.na(weed_count), weed_count > 0) %>%
+  group_by(row_num) %>%
+  summarise(total_abundance = sum(weed_count, na.rm = TRUE), .groups = "drop")
+
+sedge_dat <- type_point %>%
+  filter(type == "Sedge") %>%
+  left_join(point_totals_type, by = "row_num") %>%
+  left_join(point_env, by = "row_num") %>%
+  mutate(
+    sedge_abundance = as.numeric(type_abundance),
+    other_abundance = as.numeric(total_abundance - type_abundance),
+    sedge_prop = sedge_abundance / total_abundance
+  ) %>%
+  filter(
+    total_abundance >= 3,
+    !is.na(dist_to_current_m),
+    !is.na(x_utm),
+    !is.na(y_utm)
+  ) %>%
+  mutate(
+    across(c(
+      sedge_abundance, other_abundance, total_abundance,
+      dist_to_current_m, x_utm, y_utm,
+      any_of(model_predictors)
+    ), as.numeric)
+  )
+
+#-----------------------------
+# quick check: are distance and wetness correlated?
+#-----------------------------
+sedge_dat %>%
+  summarise(
+    rho = cor(
+      dist_to_current_m,
+      topographic_wetness_index_usgs,
+      method = "spearman",
+      use = "pairwise.complete.obs"
+    )
+  )
+
+#-----------------------------
+# fit sedge model
+#-----------------------------
+sedge_preds <- intersect(
+  c(
+    "p_h_2", "p", "k", "ca", "mg",
+    "elevation", "slope",
+    "topographic_wetness_index_usgs",
+    "flow_accumulation_usgs",
+    "ndvi_sept_2022"
+  ),
+  names(sedge_dat)
+)
+
+if (nrow(sedge_dat) >= 30) {
+
+  sedge_formula <- as.formula(
+    paste(
+      "cbind(sedge_abundance, other_abundance) ~",
+      paste(
+        c(
+          "s(dist_to_current_m, k = 4)",
+          sedge_preds,
+          "s(x_utm, y_utm, k = 15)"
+        ),
+        collapse = " + "
+      )
+    )
+  )
+
+  sedge_mod <- gam(
+    sedge_formula,
+    data = sedge_dat,
+    family = quasibinomial(),
+    method = "REML"
+  )
+
+  sedge_sum <- summary(sedge_mod)
+
+  #-----------------------------
+  # helper: partial prediction
+  #-----------------------------
+  make_partial_pred <- function(mod, dat, focal_var, grid_n = 200) {
+    newdat <- dat[rep(1, grid_n), , drop = FALSE]
+
+    for (nm in names(newdat)) {
+      if (is.numeric(newdat[[nm]])) {
+        newdat[[nm]] <- median(dat[[nm]], na.rm = TRUE)
+      }
+    }
+
+    newdat[[focal_var]] <- seq(
+      min(dat[[focal_var]], na.rm = TRUE),
+      max(dat[[focal_var]], na.rm = TRUE),
+      length.out = grid_n
+    )
+
+    pr <- predict(mod, newdata = newdat, type = "link", se.fit = TRUE)
+
+    tibble(
+      x = newdat[[focal_var]],
+      fit = plogis(pr$fit),
+      lower = plogis(pr$fit - 1.96 * pr$se.fit),
+      upper = plogis(pr$fit + 1.96 * pr$se.fit),
+      variable = focal_var
+    )
+  }
+
+  #-----------------------------
+  # build plotting data
+  #-----------------------------
+  sedge_plot_raw <- sedge_dat
+
+  sedge_dist_pred <- make_partial_pred(sedge_mod, sedge_dat, "dist_to_current_m")
+  sedge_twi_pred  <- make_partial_pred(sedge_mod, sedge_dat, "topographic_wetness_index_usgs")
+
+  #-----------------------------
+  # extract labels from smooth table
+  #-----------------------------
+  smooth_terms <- rownames(sedge_sum$s.table)
+
+  dist_row <- which(str_detect(smooth_terms, "dist_to_current_m"))
+  twi_row  <- which(str_detect(smooth_terms, "topographic_wetness_index_usgs"))
+
+  dist_lab <- if (length(dist_row) == 1) {
+    paste0(
+      "edf = ", round(sedge_sum$s.table[dist_row, "edf"], 2),
+      "\np = ", signif(sedge_sum$s.table[dist_row, "p-value"], 3)
+    )
+  } else {
+    NULL
+  }
+
+  twi_lab <- if (length(twi_row) == 1) {
+    paste0(
+      "edf = ", round(sedge_sum$s.table[twi_row, "edf"], 2),
+      "\np = ", signif(sedge_sum$s.table[twi_row, "p-value"], 3)
+    )
+  } else {
+    NULL
+  }
+
+  #-----------------------------
+  # theme
+  #-----------------------------
+  theme_sedge <- theme_minimal(base_size = 13) +
+    theme(
+      panel.grid.minor = element_blank(),
+      panel.grid.major.x = element_blank(),
+      strip.text = element_text(face = "bold"),
+      axis.title = element_text(face = "bold"),
+      plot.title = element_text(face = "bold", size = 14),
+      plot.subtitle = element_text(size = 11),
+      plot.caption = element_text(size = 10, hjust = 0),
+      legend.position = "none"
+    )
+
+  #-----------------------------
+  # panel 1: distance
+  #-----------------------------
+  p_dist_sedge <- ggplot() +
+    geom_point(
+      data = sedge_plot_raw,
+      aes(x = dist_to_current_m, y = sedge_prop),
+      alpha = 0.15,
+      size = 1.5,
+      position = position_jitter(width = 0.8, height = 0.003)
+    ) +
+    geom_ribbon(
+      data = sedge_dist_pred,
+      aes(x = x, ymin = lower, ymax = upper),
+      alpha = 0.22
+    ) +
+    geom_line(
+      data = sedge_dist_pred,
+      aes(x = x, y = fit),
+      linewidth = 1.1
+    ) +
+    scale_y_continuous(
+      labels = percent_format(accuracy = 1),
+      limits = c(0, NA),
+      expand = expansion(mult = c(0, 0.05))
+    ) +
+    labs(
+      title = "Distance to disturbance",
+      x = "Distance to disturbance (m)",
+      y = "Predicted sedge proportion"
+    ) +
+    theme_sedge
+
+  if (!is.null(dist_lab)) {
+    p_dist_sedge <- p_dist_sedge +
+      annotate(
+        "text",
+        x = Inf, y = Inf,
+        label = dist_lab,
+        hjust = 1.1, vjust = 1.4, size = 4
+      )
+  }
+
+  #-----------------------------
+  # panel 2: wetness
+  #-----------------------------
+  p_twi_sedge <- ggplot() +
+    geom_point(
+      data = sedge_plot_raw,
+      aes(x = topographic_wetness_index_usgs, y = sedge_prop),
+      alpha = 0.15,
+      size = 1.5,
+      position = position_jitter(width = 0.03, height = 0.003)
+    ) +
+    geom_ribbon(
+      data = sedge_twi_pred,
+      aes(x = x, ymin = lower, ymax = upper),
+      alpha = 0.22
+    ) +
+    geom_line(
+      data = sedge_twi_pred,
+      aes(x = x, y = fit),
+      linewidth = 1.1
+    ) +
+    scale_y_continuous(
+      labels = percent_format(accuracy = 1),
+      limits = c(0, NA),
+      expand = expansion(mult = c(0, 0.05))
+    ) +
+    labs(
+      title = "Topographic wetness",
+      x = "Topographic Wetness Index",
+      y = NULL
+    ) +
+    theme_sedge
+
+  if (!is.null(twi_lab)) {
+    p_twi_sedge <- p_twi_sedge +
+      annotate(
+        "text",
+        x = Inf, y = Inf,
+        label = twi_lab,
+        hjust = 1.1, vjust = 1.4, size = 4
+      )
+  }
+
+  #-----------------------------
+  # combine panels
+  #-----------------------------
+  sedge_fig <- p_dist_sedge + p_twi_sedge +
+    plot_annotation(
+      title = "Adjusted partial effects for sedges",
+      subtitle = paste(
+        "Lines show model-predicted sedge proportion from the spatial GAM;",
+        "other covariates held at typical values."
+      ),
+      caption = paste(
+        "Points are raw observed proportions for context only.",
+        "Shaded ribbons show 95% confidence intervals."
+      )
+    )
+
+  sedge_fig
+}
+
+```
+
+```{r}
+#-----------------------------------
+# nested sedge models
+#-----------------------------------
+sedge_preds <- intersect(
+  c(
+    "p_h_2", "p", "k", "ca", "mg",
+    "elevation", "slope",
+    "topographic_wetness_index_usgs",
+    "flow_accumulation_usgs",
+    "ndvi_sept_2022"
+  ),
+  names(sedge_dat)
+)
+
+rhs_dist <- "s(dist_to_current_m, k = 4)"
+rhs_space <- "s(x_utm, y_utm, k = 15)"
+rhs_covars <- paste(sedge_preds, collapse = " + ")
+
+f_sedge_1 <- as.formula(
+  paste("cbind(sedge_abundance, other_abundance) ~", rhs_dist)
+)
+
+f_sedge_2 <- as.formula(
+  paste("cbind(sedge_abundance, other_abundance) ~", rhs_dist, "+", rhs_space)
+)
+
+f_sedge_3 <- as.formula(
+  paste("cbind(sedge_abundance, other_abundance) ~", rhs_dist, "+", rhs_covars)
+)
+
+f_sedge_4 <- as.formula(
+  paste("cbind(sedge_abundance, other_abundance) ~", rhs_dist, "+", rhs_covars, "+", rhs_space)
+)
+
+f_sedge_5 <- as.formula(
+  paste("cbind(sedge_abundance, other_abundance) ~", rhs_covars, "+", rhs_space)
+)
+
+m_sedge_1 <- gam(f_sedge_1, data = sedge_dat, family = quasibinomial(), method = "REML")
+m_sedge_2 <- gam(f_sedge_2, data = sedge_dat, family = quasibinomial(), method = "REML")
+m_sedge_3 <- gam(f_sedge_3, data = sedge_dat, family = quasibinomial(), method = "REML")
+m_sedge_4 <- gam(f_sedge_4, data = sedge_dat, family = quasibinomial(), method = "REML")
+m_sedge_5 <- gam(f_sedge_5, data = sedge_dat, family = quasibinomial(), method = "REML")
+
+extract_dist_info <- function(mod, model_name) {
+  sm <- summary(mod)
+  s_tab <- as.data.frame(sm$s.table)
+  s_tab$term <- rownames(s_tab)
+
+  dist_row <- s_tab %>%
+    filter(str_detect(term, "dist_to_current_m"))
+
+  tibble(
+    model = model_name,
+    n = nrow(mod$model),
+    dev_expl = sm$dev.expl,
+    dist_edf = if (nrow(dist_row) > 0) dist_row$edf[1] else NA_real_,
+    dist_p = if (nrow(dist_row) > 0) dist_row$`p-value`[1] else NA_real_
+  )
+}
+
+sedge_model_summary <- bind_rows(
+  extract_dist_info(m_sedge_1, "distance only"),
+  extract_dist_info(m_sedge_2, "distance + space"),
+  extract_dist_info(m_sedge_3, "distance + covariates"),
+  extract_dist_info(m_sedge_4, "distance + covariates + space"),
+  extract_dist_info(m_sedge_5, "covariates + space (no distance)")
+)
+
+sedge_model_summary
+
+
+#For sedges, distance to disturbance was not significant in a univariate model and remained non-significant when only environmental covariates were included. However, after accounting for spatial structure, distance to disturbance became a significant nonlinear predictor of sedge abundance proportion (edf = 1.98, p = 0.007), and inclusion of the distance smooth increased deviance explained from 57.4% to 66.9%. This suggests that the sedge–disturbance relationship is spatially structured and not evident as a simple marginal trend. In the full model, Ca was negatively associated with sedge proportion, while Mg and September NDVI were positively associated.
+```
+
+```{r}
+# full sedge model already exists:
+# sedge_mod
+
+full_dev <- summary(sedge_mod)$dev.expl
+
+drop_one_term_sedge <- function(term_to_drop, dat, sedge_preds) {
+
+  base_terms <- c(
+    "s(dist_to_current_m, k = 4)",
+    sedge_preds,
+    "s(x_utm, y_utm, k = 15)"
+  )
+
+  keep_terms <- base_terms[base_terms != term_to_drop]
+
+  f_drop <- as.formula(
+    paste(
+      "cbind(sedge_abundance, other_abundance) ~",
+      paste(keep_terms, collapse = " + ")
+    )
+  )
+
+  mod_drop <- gam(
+    f_drop,
+    data = dat,
+    family = quasibinomial(),
+    method = "REML"
+  )
+
+  tibble(
+    dropped_term = term_to_drop,
+    dev_expl_drop = summary(mod_drop)$dev.expl
+  )
+}
+
+terms_to_test <- c(
+  "s(dist_to_current_m, k = 4)",
+  sedge_preds,
+  "s(x_utm, y_utm, k = 15)"
+)
+
+sedge_drop_importance <- map_dfr(
+  terms_to_test,
+  ~ drop_one_term_sedge(.x, sedge_dat, sedge_preds)
+) %>%
+  mutate(
+    full_dev_expl = full_dev,
+    delta_dev_expl = full_dev_expl - dev_expl_drop,
+    term_label = case_when(
+      dropped_term == "s(dist_to_current_m, k = 4)" ~ "Distance to disturbance",
+      dropped_term == "s(x_utm, y_utm, k = 15)" ~ "Spatial smooth",
+      dropped_term == "p_h_2" ~ "pH",
+      dropped_term == "p" ~ "P",
+      dropped_term == "k" ~ "K",
+      dropped_term == "ca" ~ "Ca",
+      dropped_term == "mg" ~ "Mg",
+      dropped_term == "elevation" ~ "Elevation",
+      dropped_term == "slope" ~ "Slope",
+      dropped_term == "topographic_wetness_index_usgs" ~ "Topographic wetness",
+      dropped_term == "flow_accumulation_usgs" ~ "Flow accumulation",
+      dropped_term == "ndvi_sept_2022" ~ "NDVI (Sept 2022)",
+      TRUE ~ dropped_term
+    )
+  ) %>%
+  arrange(desc(delta_dev_expl))
+
+sedge_drop_importance
+ggplot(
+  sedge_drop_importance,
+  aes(x = reorder(term_label, delta_dev_expl), y = delta_dev_expl)
+) +
+  geom_col() +
+  coord_flip() +
+  theme_minimal(base_size = 13) +
+  labs(
+    title = "Unique contribution of predictors in the full sedge GAM",
+    subtitle = "Bars show the drop in deviance explained when each term is removed from the full model",
+    x = NULL,
+    y = "Decrease in deviance explained"
+  )
+
+#Variable-drop comparisons indicated that the largest unique contribution to sedge abundance proportion came from the spatial smooth, followed by distance to disturbance. Among measured covariates, Ca and September NDVI contributed the most unique explanatory power, with smaller contributions from Mg and flow accumulation. Slope and topographic wetness index contributed little to no unique variation in the full model.
+```
+
+```{r}
+full_trait_preds <- intersect(
+  c(
+    "p_h_2", "p", "k", "ca", "mg", "mn", "zn",
+    "elevation",
+    "slope",
+    "aspect",
+    "curvature",
+    "topographic_wetness_index_usgs",
+    "topographic_position_index",
+    "flow_accumulation_usgs",
+    "stream_power_index",
+    "vertical_distance_to_channel_network",
+    "ndvi_sept_2022"
+  ),
+  names(point_env)
+)
+
+library(patchwork)
+
+#-----------------------------
+# build broadleaf point table
+#-----------------------------
+type_point <- weed_trait_long %>%
+  filter(!is.na(type), type != "", !is.na(weed_count), weed_count > 0) %>%
+  group_by(row_num, type) %>%
+  summarise(type_abundance = sum(weed_count, na.rm = TRUE), .groups = "drop")
+
+point_totals_type <- weed_trait_long %>%
+  filter(!is.na(weed_count), weed_count > 0) %>%
+  group_by(row_num) %>%
+  summarise(total_abundance = sum(weed_count, na.rm = TRUE), .groups = "drop")
+
+broadleaf_dat <- type_point %>%
+  filter(type == "Broadleaf") %>%
+  left_join(point_totals_type, by = "row_num") %>%
+  left_join(point_env, by = "row_num") %>%
+  mutate(
+    broadleaf_abundance = as.numeric(type_abundance),
+    other_abundance = as.numeric(total_abundance - type_abundance),
+    broadleaf_prop = broadleaf_abundance / total_abundance
+  ) %>%
+  filter(
+    total_abundance >= 3,
+    !is.na(dist_to_current_m),
+    !is.na(x_utm),
+    !is.na(y_utm)
+  ) %>%
+  mutate(
+    across(c(
+      broadleaf_abundance, other_abundance, total_abundance,
+      dist_to_current_m, x_utm, y_utm,
+      any_of(full_trait_preds)
+    ), as.numeric)
+  )
+
+# optional correlation check
+broadleaf_dat %>%
+  summarise(
+    rho = cor(
+      dist_to_current_m,
+      topographic_wetness_index_usgs,
+      method = "spearman",
+      use = "pairwise.complete.obs"
+    )
+  )
+
+#-----------------------------
+# fit broadleaf GAMs
+#-----------------------------
+broadleaf_preds <- intersect(full_trait_preds, names(broadleaf_dat))
+
+rhs_dist <- "s(dist_to_current_m, k = 4)"
+rhs_space <- "s(x_utm, y_utm, k = 15)"
+rhs_covars <- paste(broadleaf_preds, collapse = " + ")
+
+f_broadleaf_1 <- as.formula(
+  paste("cbind(broadleaf_abundance, other_abundance) ~", rhs_dist)
+)
+
+f_broadleaf_2 <- as.formula(
+  paste("cbind(broadleaf_abundance, other_abundance) ~", rhs_dist, "+", rhs_space)
+)
+
+f_broadleaf_3 <- as.formula(
+  paste("cbind(broadleaf_abundance, other_abundance) ~", rhs_dist, "+", rhs_covars)
+)
+
+f_broadleaf_4 <- as.formula(
+  paste("cbind(broadleaf_abundance, other_abundance) ~", rhs_dist, "+", rhs_covars, "+", rhs_space)
+)
+
+f_broadleaf_5 <- as.formula(
+  paste("cbind(broadleaf_abundance, other_abundance) ~", rhs_covars, "+", rhs_space)
+)
+
+m_broadleaf_1 <- gam(f_broadleaf_1, data = broadleaf_dat, family = quasibinomial(), method = "REML")
+m_broadleaf_2 <- gam(f_broadleaf_2, data = broadleaf_dat, family = quasibinomial(), method = "REML")
+m_broadleaf_3 <- gam(f_broadleaf_3, data = broadleaf_dat, family = quasibinomial(), method = "REML")
+m_broadleaf_4 <- gam(f_broadleaf_4, data = broadleaf_dat, family = quasibinomial(), method = "REML")
+m_broadleaf_5 <- gam(f_broadleaf_5, data = broadleaf_dat, family = quasibinomial(), method = "REML")
+
+extract_dist_info <- function(mod, model_name) {
+  sm <- summary(mod)
+  s_tab <- as.data.frame(sm$s.table)
+  s_tab$term <- rownames(s_tab)
+
+  dist_row <- s_tab %>%
+    filter(str_detect(term, "dist_to_current_m"))
+
+  tibble(
+    model = model_name,
+    n = nrow(mod$model),
+    dev_expl = sm$dev.expl,
+    dist_edf = if (nrow(dist_row) > 0) dist_row$edf[1] else NA_real_,
+    dist_p = if (nrow(dist_row) > 0) dist_row$`p-value`[1] else NA_real_
+  )
+}
+
+broadleaf_model_summary <- bind_rows(
+  extract_dist_info(m_broadleaf_1, "distance only"),
+  extract_dist_info(m_broadleaf_2, "distance + space"),
+  extract_dist_info(m_broadleaf_3, "distance + covariates"),
+  extract_dist_info(m_broadleaf_4, "distance + covariates + space"),
+  extract_dist_info(m_broadleaf_5, "covariates + space (no distance)")
+)
+
+broadleaf_model_summary
+summary(m_broadleaf_4)
+
+drop_one_term_broadleaf <- function(term_to_drop, dat, preds) {
+  base_terms <- c(
+    "s(dist_to_current_m, k = 4)",
+    preds,
+    "s(x_utm, y_utm, k = 15)"
+  )
+
+  keep_terms <- base_terms[base_terms != term_to_drop]
+
+  f_drop <- as.formula(
+    paste(
+      "cbind(broadleaf_abundance, other_abundance) ~",
+      paste(keep_terms, collapse = " + ")
+    )
+  )
+
+  mod_drop <- gam(
+    f_drop,
+    data = dat,
+    family = quasibinomial(),
+    method = "REML"
+  )
+
+  tibble(
+    dropped_term = term_to_drop,
+    dev_expl_drop = summary(mod_drop)$dev.expl
+  )
+}
+
+broadleaf_full_dev <- summary(m_broadleaf_4)$dev.expl
+
+broadleaf_terms_to_test <- c(
+  "s(dist_to_current_m, k = 4)",
+  broadleaf_preds,
+  "s(x_utm, y_utm, k = 15)"
+)
+
+broadleaf_drop_importance <- map_dfr(
+  broadleaf_terms_to_test,
+  ~ drop_one_term_broadleaf(.x, broadleaf_dat, broadleaf_preds)
+) %>%
+  mutate(
+    full_dev_expl = broadleaf_full_dev,
+    delta_dev_expl = full_dev_expl - dev_expl_drop
+  ) %>%
+  arrange(desc(delta_dev_expl))
+
+broadleaf_drop_importance
+#-----------------------------
+# build grass point table
+#-----------------------------
+grass_dat <- type_point %>%
+  filter(type == "Grass") %>%
+  left_join(point_totals_type, by = "row_num") %>%
+  left_join(point_env, by = "row_num") %>%
+  mutate(
+    grass_abundance = as.numeric(type_abundance),
+    other_abundance = as.numeric(total_abundance - type_abundance),
+    grass_prop = grass_abundance / total_abundance
+  ) %>%
+  filter(
+    total_abundance >= 3,
+    !is.na(dist_to_current_m),
+    !is.na(x_utm),
+    !is.na(y_utm)
+  ) %>%
+  mutate(
+    across(c(
+      grass_abundance, other_abundance, total_abundance,
+      dist_to_current_m, x_utm, y_utm,
+      any_of(full_trait_preds)
+    ), as.numeric)
+  )
+
+grass_dat %>%
+  summarise(
+    rho = cor(
+      dist_to_current_m,
+      topographic_wetness_index_usgs,
+      method = "spearman",
+      use = "pairwise.complete.obs"
+    )
+  )
+
+grass_preds <- intersect(full_trait_preds, names(grass_dat))
+
+rhs_covars_grass <- paste(grass_preds, collapse = " + ")
+
+f_grass_1 <- as.formula(
+  paste("cbind(grass_abundance, other_abundance) ~", rhs_dist)
+)
+
+f_grass_2 <- as.formula(
+  paste("cbind(grass_abundance, other_abundance) ~", rhs_dist, "+", rhs_space)
+)
+
+f_grass_3 <- as.formula(
+  paste("cbind(grass_abundance, other_abundance) ~", rhs_dist, "+", rhs_covars_grass)
+)
+
+f_grass_4 <- as.formula(
+  paste("cbind(grass_abundance, other_abundance) ~", rhs_dist, "+", rhs_covars_grass, "+", rhs_space)
+)
+
+f_grass_5 <- as.formula(
+  paste("cbind(grass_abundance, other_abundance) ~", rhs_covars_grass, "+", rhs_space)
+)
+
+m_grass_1 <- gam(f_grass_1, data = grass_dat, family = quasibinomial(), method = "REML")
+m_grass_2 <- gam(f_grass_2, data = grass_dat, family = quasibinomial(), method = "REML")
+m_grass_3 <- gam(f_grass_3, data = grass_dat, family = quasibinomial(), method = "REML")
+m_grass_4 <- gam(f_grass_4, data = grass_dat, family = quasibinomial(), method = "REML")
+m_grass_5 <- gam(f_grass_5, data = grass_dat, family = quasibinomial(), method = "REML")
+
+grass_model_summary <- bind_rows(
+  extract_dist_info(m_grass_1, "distance only"),
+  extract_dist_info(m_grass_2, "distance + space"),
+  extract_dist_info(m_grass_3, "distance + covariates"),
+  extract_dist_info(m_grass_4, "distance + covariates + space"),
+  extract_dist_info(m_grass_5, "covariates + space (no distance)")
+)
+
+grass_model_summary
+summary(m_grass_4)
+#-----------------------------
+# build grass point table
+#-----------------------------
+grass_dat <- type_point %>%
+  filter(type == "Grass") %>%
+  left_join(point_totals_type, by = "row_num") %>%
+  left_join(point_env, by = "row_num") %>%
+  mutate(
+    grass_abundance = as.numeric(type_abundance),
+    other_abundance = as.numeric(total_abundance - type_abundance),
+    grass_prop = grass_abundance / total_abundance
+  ) %>%
+  filter(
+    total_abundance >= 3,
+    !is.na(dist_to_current_m),
+    !is.na(x_utm),
+    !is.na(y_utm)
+  ) %>%
+  mutate(
+    across(c(
+      grass_abundance, other_abundance, total_abundance,
+      dist_to_current_m, x_utm, y_utm,
+      any_of(full_trait_preds)
+    ), as.numeric)
+  )
+
+grass_dat %>%
+  summarise(
+    rho = cor(
+      dist_to_current_m,
+      topographic_wetness_index_usgs,
+      method = "spearman",
+      use = "pairwise.complete.obs"
+    )
+  )
+
+grass_preds <- intersect(full_trait_preds, names(grass_dat))
+
+rhs_covars_grass <- paste(grass_preds, collapse = " + ")
+
+f_grass_1 <- as.formula(
+  paste("cbind(grass_abundance, other_abundance) ~", rhs_dist)
+)
+
+f_grass_2 <- as.formula(
+  paste("cbind(grass_abundance, other_abundance) ~", rhs_dist, "+", rhs_space)
+)
+
+f_grass_3 <- as.formula(
+  paste("cbind(grass_abundance, other_abundance) ~", rhs_dist, "+", rhs_covars_grass)
+)
+
+f_grass_4 <- as.formula(
+  paste("cbind(grass_abundance, other_abundance) ~", rhs_dist, "+", rhs_covars_grass, "+", rhs_space)
+)
+
+f_grass_5 <- as.formula(
+  paste("cbind(grass_abundance, other_abundance) ~", rhs_covars_grass, "+", rhs_space)
+)
+
+m_grass_1 <- gam(f_grass_1, data = grass_dat, family = quasibinomial(), method = "REML")
+m_grass_2 <- gam(f_grass_2, data = grass_dat, family = quasibinomial(), method = "REML")
+m_grass_3 <- gam(f_grass_3, data = grass_dat, family = quasibinomial(), method = "REML")
+m_grass_4 <- gam(f_grass_4, data = grass_dat, family = quasibinomial(), method = "REML")
+m_grass_5 <- gam(f_grass_5, data = grass_dat, family = quasibinomial(), method = "REML")
+
+grass_model_summary <- bind_rows(
+  extract_dist_info(m_grass_1, "distance only"),
+  extract_dist_info(m_grass_2, "distance + space"),
+  extract_dist_info(m_grass_3, "distance + covariates"),
+  extract_dist_info(m_grass_4, "distance + covariates + space"),
+  extract_dist_info(m_grass_5, "covariates + space (no distance)")
+)
+
+grass_model_summary
+summary(m_grass_4)
+#sort broadleaf and grass model summaries by deviance explained and plot
+broadleaf_model_summary <- broadleaf_model_summary %>%
+  arrange(dev_expl) 
+grass_model_summary <- grass_model_summary %>%
+  arrange(dev_expl)
+ggplot(broadleaf_model_summary, aes(x = model, y = dev_expl)) +
+  geom_col(width = 0.7) +
+  coord_flip() +
+  theme_minimal(base_size = 13) +
+  labs(
+    title = "Broadleaf model comparison",
+    subtitle = "Deviance explained across nested GAMs",
+    x = NULL,
+    y = "Deviance explained"
+  )
+
+ggplot(grass_model_summary, aes(x = model, y = dev_expl)) +
+  geom_col(width = 0.7) +
+  coord_flip() +
+  theme_minimal(base_size = 13) +
+  labs(
+    title = "Grass model comparison",
+    subtitle = "Deviance explained across nested GAMs",
+    x = NULL,
+    y = "Deviance explained"
+  )
+
+broadleaf_drop_importance <- broadleaf_drop_importance %>%
+  mutate(
+    term_label = case_when(
+      dropped_term == "s(dist_to_current_m, k = 4)" ~ "Distance to disturbance",
+      dropped_term == "s(x_utm, y_utm, k = 15)" ~ "Spatial smooth",
+      dropped_term == "p_h_2" ~ "pH",
+      dropped_term == "p" ~ "P",
+      dropped_term == "k" ~ "K",
+      dropped_term == "ca" ~ "Ca",
+      dropped_term == "mg" ~ "Mg",
+      dropped_term == "mn" ~ "Mn",
+      dropped_term == "zn" ~ "Zn",
+      dropped_term == "elevation" ~ "Elevation",
+      dropped_term == "slope" ~ "Slope",
+      dropped_term == "aspect" ~ "Aspect",
+      dropped_term == "curvature" ~ "Curvature",
+      dropped_term == "topographic_wetness_index_usgs" ~ "Topographic wetness",
+      dropped_term == "topographic_position_index" ~ "Topographic position",
+      dropped_term == "flow_accumulation_usgs" ~ "Flow accumulation",
+      dropped_term == "stream_power_index" ~ "Stream power",
+      dropped_term == "vertical_distance_to_channel_network" ~ "Vertical distance to channel",
+      dropped_term == "ndvi_sept_2022" ~ "NDVI (Sept 2022)",
+      TRUE ~ dropped_term
+    )
+  )
+
+ggplot(
+  broadleaf_drop_importance,
+  aes(x = reorder(term_label, delta_dev_expl), y = delta_dev_expl)
+) +
+  geom_col() +
+  coord_flip() +
+  theme_minimal(base_size = 13) +
+  labs(
+    title = "Broadleaf predictor importance",
+    subtitle = "Decrease in deviance explained when each term is removed",
+    x = NULL,
+    y = "Decrease in deviance explained"
+  )
+drop_one_term_grass <- function(term_to_drop, dat, preds) {
+  base_terms <- c(
+    "s(dist_to_current_m, k = 4)",
+    preds,
+    "s(x_utm, y_utm, k = 15)"
+  )
+
+  keep_terms <- base_terms[base_terms != term_to_drop]
+
+  f_drop <- as.formula(
+    paste(
+      "cbind(grass_abundance, other_abundance) ~",
+      paste(keep_terms, collapse = " + ")
+    )
+  )
+
+  mod_drop <- gam(
+    f_drop,
+    data = dat,
+    family = quasibinomial(),
+    method = "REML"
+  )
+
+  tibble(
+    dropped_term = term_to_drop,
+    dev_expl_drop = summary(mod_drop)$dev.expl
+  )
+}
+
+grass_full_dev <- summary(m_grass_4)$dev.expl
+
+grass_terms_to_test <- c(
+  "s(dist_to_current_m, k = 4)",
+  grass_preds,
+  "s(x_utm, y_utm, k = 15)"
+)
+
+grass_drop_importance <- map_dfr(
+  grass_terms_to_test,
+  ~ drop_one_term_grass(.x, grass_dat, grass_preds)
+) %>%
+  mutate(
+    full_dev_expl = grass_full_dev,
+    delta_dev_expl = full_dev_expl - dev_expl_drop
+  ) %>%
+  arrange(desc(delta_dev_expl))
+
+grass_drop_importance
+drop_one_term_grass <- function(term_to_drop, dat, preds) {
+  base_terms <- c(
+    "s(dist_to_current_m, k = 4)",
+    preds,
+    "s(x_utm, y_utm, k = 15)"
+  )
+
+  keep_terms <- base_terms[base_terms != term_to_drop]
+
+  f_drop <- as.formula(
+    paste(
+      "cbind(grass_abundance, other_abundance) ~",
+      paste(keep_terms, collapse = " + ")
+    )
+  )
+
+  mod_drop <- gam(
+    f_drop,
+    data = dat,
+    family = quasibinomial(),
+    method = "REML"
+  )
+
+  tibble(
+    dropped_term = term_to_drop,
+    dev_expl_drop = summary(mod_drop)$dev.expl
+  )
+}
+
+grass_full_dev <- summary(m_grass_4)$dev.expl
+
+grass_terms_to_test <- c(
+  "s(dist_to_current_m, k = 4)",
+  grass_preds,
+  "s(x_utm, y_utm, k = 15)"
+)
+
+grass_drop_importance <- map_dfr(
+  grass_terms_to_test,
+  ~ drop_one_term_grass(.x, grass_dat, grass_preds)
+) %>%
+  mutate(
+    full_dev_expl = grass_full_dev,
+    delta_dev_expl = full_dev_expl - dev_expl_drop
+  ) %>%
+  arrange(desc(delta_dev_expl))
+
+grass_drop_importance
+grass_drop_importance <- grass_drop_importance %>%
+  mutate(
+    term_label = case_when(
+      dropped_term == "s(dist_to_current_m, k = 4)" ~ "Distance to disturbance",
+      dropped_term == "s(x_utm, y_utm, k = 15)" ~ "Spatial smooth",
+      dropped_term == "p_h_2" ~ "pH",
+      dropped_term == "p" ~ "P",
+      dropped_term == "k" ~ "K",
+      dropped_term == "ca" ~ "Ca",
+      dropped_term == "mg" ~ "Mg",
+      dropped_term == "mn" ~ "Mn",
+      dropped_term == "zn" ~ "Zn",
+      dropped_term == "elevation" ~ "Elevation",
+      dropped_term == "slope" ~ "Slope",
+      dropped_term == "aspect" ~ "Aspect",
+      dropped_term == "curvature" ~ "Curvature",
+      dropped_term == "topographic_wetness_index_usgs" ~ "Topographic wetness",
+      dropped_term == "topographic_position_index" ~ "Topographic position",
+      dropped_term == "flow_accumulation_usgs" ~ "Flow accumulation",
+      dropped_term == "stream_power_index" ~ "Stream power",
+      dropped_term == "vertical_distance_to_channel_network" ~ "Vertical distance to channel",
+      dropped_term == "ndvi_sept_2022" ~ "NDVI (Sept 2022)",
+      TRUE ~ dropped_term
+    )
+  )
+
+ggplot(
+  grass_drop_importance,
+  aes(x = reorder(term_label, delta_dev_expl), y = delta_dev_expl)
+) +
+  geom_col() +
+  coord_flip() +
+  theme_minimal(base_size = 13) +
+  labs(
+    title = "Grass predictor importance",
+    subtitle = "Decrease in deviance explained when each term is removed",
+    x = NULL,
+    y = "Decrease in deviance explained"
+  )
+# Broadleaves
+  # 
+  # Top terms are:
+    # 
+    # spatial smooth
+    # NDVI
+    # P
+    # distance to disturbance
+    # wetness
+  # 
+  # This makes broadleaves look more spatially patchy and more tied to vegetation/wetness/fertility context.
+# Grasses
+  # 
+  # Top terms were:
+    # 
+    # Mg
+    # distance to disturbance
+    # topographic position
+    # NDVI
+  # 
+  # This made grasses look more tied to measured soil/terrain gradients and disturbance.
+
+  # Grasses appear to be more strongly associated with measured soil chemical and terrain-position gradients, whereas broadleaves retain a stronger residual spatial pattern and are more influenced by NDVI, P, and wetness-related variables.
+
+#-----------------------------
+# helper: partial prediction
+#-----------------------------
+make_partial_pred <- function(mod, dat, focal_var, grid_n = 200) {
+  newdat <- dat[rep(1, grid_n), , drop = FALSE]
+
+  for (nm in names(newdat)) {
+    if (is.numeric(newdat[[nm]])) {
+      newdat[[nm]] <- median(dat[[nm]], na.rm = TRUE)
+    }
+  }
+
+  newdat[[focal_var]] <- seq(
+    min(dat[[focal_var]], na.rm = TRUE),
+    max(dat[[focal_var]], na.rm = TRUE),
+    length.out = grid_n
+  )
+
+  pr <- predict(mod, newdata = newdat, type = "link", se.fit = TRUE)
+
+  tibble(
+    x = newdat[[focal_var]],
+    fit = plogis(pr$fit),
+    lower = plogis(pr$fit - 1.96 * pr$se.fit),
+    upper = plogis(pr$fit + 1.96 * pr$se.fit),
+    variable = focal_var
+  )
+}
+
+#-----------------------------
+# prediction data
+#-----------------------------
+broadleaf_dist_pred <- make_partial_pred(
+  m_broadleaf_4,
+  broadleaf_dat,
+  "dist_to_current_m"
+)
+
+#-----------------------------
+# label from smooth table
+#-----------------------------
+broadleaf_sum <- summary(m_broadleaf_4)
+broadleaf_smooth_terms <- rownames(broadleaf_sum$s.table)
+broadleaf_dist_row <- which(str_detect(broadleaf_smooth_terms, "dist_to_current_m"))
+
+broadleaf_dist_lab <- if (length(broadleaf_dist_row) == 1) {
+  paste0(
+    "edf = ", round(broadleaf_sum$s.table[broadleaf_dist_row, "edf"], 2),
+    "\np = ", signif(broadleaf_sum$s.table[broadleaf_dist_row, "p-value"], 3)
+  )
+} else {
+  NULL
+}
+
+#-----------------------------
+# theme
+#-----------------------------
+theme_trait <- theme_minimal(base_size = 13) +
+  theme(
+    panel.grid.minor = element_blank(),
+    panel.grid.major.x = element_blank(),
+    axis.title = element_text(face = "bold"),
+    plot.title = element_text(face = "bold", size = 14),
+    plot.subtitle = element_text(size = 11),
+    plot.caption = element_text(size = 10, hjust = 0),
+    legend.position = "none"
+  )
+
+#-----------------------------
+# broadleaf plot
+#-----------------------------
+p_broadleaf_dist <- ggplot() +
+  geom_point(
+    data = broadleaf_dat,
+    aes(x = dist_to_current_m, y = broadleaf_prop),
+    alpha = 0.15,
+    size = 1.5,
+    position = position_jitter(width = 0.8, height = 0.003)
+  ) +
+  geom_ribbon(
+    data = broadleaf_dist_pred,
+    aes(x = x, ymin = lower, ymax = upper),
+    alpha = 0.22
+  ) +
+  geom_line(
+    data = broadleaf_dist_pred,
+    aes(x = x, y = fit),
+    linewidth = 1.1
+  ) +
+  scale_y_continuous(
+    labels = percent_format(accuracy = 1),
+    limits = c(0, NA),
+    expand = expansion(mult = c(0, 0.05))
+  ) +
+  labs(
+    title = "Broadleaf response to distance from disturbance",
+    subtitle = "Adjusted partial effect from full GAM",
+    x = "Distance to disturbance (m)",
+    y = "Predicted broadleaf proportion"
+  ) +
+  theme_trait
+
+if (!is.null(broadleaf_dist_lab)) {
+  p_broadleaf_dist <- p_broadleaf_dist +
+    annotate(
+      "text",
+      x = Inf, y = Inf,
+      label = broadleaf_dist_lab,
+      hjust = 1.1, vjust = 1.4, size = 4
+    )
+}
+
+p_broadleaf_dist
+
+#-----------------------------
+# prediction data
+#-----------------------------
+grass_dist_pred <- make_partial_pred(
+  m_grass_4,
+  grass_dat,
+  "dist_to_current_m"
+)
+
+#-----------------------------
+# label from smooth table
+#-----------------------------
+grass_sum <- summary(m_grass_4)
+grass_smooth_terms <- rownames(grass_sum$s.table)
+grass_dist_row <- which(str_detect(grass_smooth_terms, "dist_to_current_m"))
+
+grass_dist_lab <- if (length(grass_dist_row) == 1) {
+  paste0(
+    "edf = ", round(grass_sum$s.table[grass_dist_row, "edf"], 2),
+    "\np = ", signif(grass_sum$s.table[grass_dist_row, "p-value"], 3)
+  )
+} else {
+  NULL
+}
+
+#-----------------------------
+# grass plot
+#-----------------------------
+p_grass_dist <- ggplot() +
+  geom_point(
+    data = grass_dat,
+    aes(x = dist_to_current_m, y = grass_prop),
+    alpha = 0.15,
+    size = 1.5,
+    position = position_jitter(width = 0.8, height = 0.003)
+  ) +
+  geom_ribbon(
+    data = grass_dist_pred,
+    aes(x = x, ymin = lower, ymax = upper),
+    alpha = 0.22
+  ) +
+  geom_line(
+    data = grass_dist_pred,
+    aes(x = x, y = fit),
+    linewidth = 1.1
+  ) +
+  scale_y_continuous(
+    labels = percent_format(accuracy = 1),
+    limits = c(0, NA),
+    expand = expansion(mult = c(0, 0.05))
+  ) +
+  labs(
+    title = "Grass response to distance from disturbance",
+    subtitle = "Adjusted partial effect from full GAM",
+    x = "Distance to disturbance (m)",
+    y = "Predicted grass proportion"
+  ) +
+  theme_trait
+
+if (!is.null(grass_dist_lab)) {
+  p_grass_dist <- p_grass_dist +
+    annotate(
+      "text",
+      x = Inf, y = Inf,
+      label = grass_dist_lab,
+      hjust = 1.1, vjust = 1.4, size = 4
+    )
+}
+
+p_grass_dist
+
+# Broadleaves: distance to disturbance matters, and the response is curved. 
+#Grasses: distance to disturbance may show some curvature, but it is not strong enough to call significant after accounting for the other predictors.
+
+# broadleaf proportion = share of all weeds that are broadleaves
+# grass proportion = share of all weeds that are grasses
+# sedge proportion = share of all weeds that are sedges
+```
+#### Morans I 
+
+```{r}
+library(sf)
+library(dplyr)
+library(spdep)
+
+weed_idx_sf <- analysis_dat %>%
+  filter(!is.na(x_utm), !is.na(y_utm)) %>%
+  st_as_sf(coords = c("x_utm", "y_utm"),
+           crs = st_crs(soil_pts_utm),
+           remove = FALSE)
+
+idx_preds <- intersect(
+  c(
+    "dist_to_current_m",
+    "p_h_2", "p", "k", "ca", "mg", "mn", "zn",
+    "elevation",
+    "slope",
+    "topographic_wetness_index_usgs",
+    "topographic_position_index",
+    "flow_accumulation_usgs",
+    "ndvi_sept_2022"
+  ),
+  names(weed_idx_sf)
+)
+
+idx_preds <- intersect(
+  c(
+    "dist_to_current_m",
+    "p_h_2", "p", "k", "ca", "mg", "mn", "zn",
+    "elevation",
+    "slope",
+    "topographic_wetness_index_usgs",
+    "topographic_position_index",
+    "flow_accumulation_usgs",
+    "ndvi_sept_2022"
+  ),
+  names(weed_idx_sf)
+)
+
+library(mgcv)
+
+shannon_dat <- weed_idx_sf %>%
+  st_drop_geometry() %>%
+  select(shannon_weiner_diversity_index, x_utm, y_utm, any_of(idx_preds)) %>%
+  drop_na()
+
+shannon_form <- as.formula(
+  paste(
+    "shannon_weiner_diversity_index ~",
+    paste(
+      c("s(dist_to_current_m, k = 4)",
+        idx_preds[idx_preds != "dist_to_current_m"]),
+      collapse = " + "
+    )
+  )
+)
+
+m_shannon <- gam(
+  shannon_form,
+  data = shannon_dat,
+  method = "REML"
+)
+
+summary(m_shannon)
+
+
+coords <- shannon_dat %>% select(x_utm, y_utm)
+
+nb <- knearneigh(coords, k = 8) %>%
+  knn2nb()
+
+lw <- nb2listw(nb, style = "W")
+
+moran.test(residuals(m_shannon), lw)
+
+moran.test(shannon_dat$shannon_weiner_diversity_index, lw)
+moran.test(residuals(m_shannon), lw)
+
+local_shannon <- localmoran(shannon_dat$shannon_weiner_diversity_index, lw)
+head(local_shannon)
+
+library(gstat)
+
+# example response: Shannon
+shannon_sf <- analysis_dat %>%
+  filter(!is.na(x_utm), !is.na(y_utm), !is.na(shannon_weiner_diversity_index)) %>%
+  st_as_sf(coords = c("x_utm", "y_utm"), crs = st_crs(soil_pts_utm))
+
+# empirical variogram
+vg_emp <- variogram(shannon_weiner_diversity_index ~ 1, shannon_sf)
+
+# fit model (try Exp, Sph, Gau if needed)
+vg_fit <- fit.variogram(
+  vg_emp,
+  vgm(psill = 0.02, model = "Exp", nugget = 0.01, range = 100)
+)
+
+vg_line <- variogramLine(vg_fit, maxdist = max(vg_emp$dist), n = 200) %>%
+  as_tibble()
+
+# extract metrics
+vg_params <- as.data.frame(vg_fit)
+
+nugget_val <- vg_params %>%
+  filter(model == "Nug") %>%
+  summarise(val = sum(psill, na.rm = TRUE)) %>%
+  pull(val)
+
+partial_sill_val <- vg_params %>%
+  filter(model != "Nug") %>%
+  summarise(val = sum(psill, na.rm = TRUE)) %>%
+  pull(val)
+
+total_sill_val <- nugget_val + partial_sill_val
+
+range_val <- vg_params %>%
+  filter(model != "Nug") %>%
+  summarise(val = max(range, na.rm = TRUE)) %>%
+  pull(val)
+
+nugget_ratio <- nugget_val / total_sill_val
+
+vg_label <- paste0(
+  "Nugget = ", round(nugget_val, 3),
+  "\nPartial sill = ", round(partial_sill_val, 3),
+  "\nTotal sill = ", round(total_sill_val, 3),
+  "\nRange = ", round(range_val, 1),
+  "\nNugget:sill ratio = ", round(nugget_ratio, 2)
+)
+
+ggplot(vg_emp, aes(x = dist, y = gamma)) +
+  geom_point(size = 2) +
+  geom_line(data = vg_line, aes(x = dist, y = gamma), linewidth = 1) +
+  annotate(
+    "text",
+    x = Inf, y = Inf,
+    label = vg_label,
+    hjust = 1.05, vjust = 1.1, size = 4
+  ) +
+  theme_minimal(base_size = 13) +
+  labs(
+    title = "Variogram of Shannon diversity",
+    subtitle = "Empirical semivariance with fitted variogram model",
+    x = "Distance",
+    y = "Semivariance"
+  )
+
+# example GAM first
+idx_preds <- intersect(
+  c(
+    "dist_to_current_m",
+    "p_h_2", "p", "k", "ca", "mg", "mn", "zn",
+    "elevation", "slope",
+    "topographic_wetness_index_usgs",
+    "topographic_position_index",
+    "flow_accumulation_usgs",
+    "ndvi_sept_2022"
+  ),
+  names(analysis_dat)
+)
+
+shannon_dat <- analysis_dat %>%
+  filter(!is.na(shannon_weiner_diversity_index), !is.na(x_utm), !is.na(y_utm)) %>%
+  select(shannon_weiner_diversity_index, x_utm, y_utm, any_of(idx_preds)) %>%
+  drop_na()
+
+shannon_form <- as.formula(
+  paste(
+    "shannon_weiner_diversity_index ~",
+    paste(
+      c("s(dist_to_current_m, k = 4)", idx_preds[idx_preds != "dist_to_current_m"]),
+      collapse = " + "
+    )
+  )
+)
+
+m_shannon <- mgcv::gam(shannon_form, data = shannon_dat, method = "REML")
+
+shannon_resid_sf <- shannon_dat %>%
+  mutate(resid = residuals(m_shannon)) %>%
+  st_as_sf(coords = c("x_utm", "y_utm"), crs = st_crs(soil_pts_utm))
+
+
+# empirical residual variogram
+vg_emp_resid <- variogram(resid ~ 1, shannon_resid_sf)
+
+# inspect empirical variogram first
+vg_emp_resid
+plot(vg_emp_resid)
+
+# rough starting values from the empirical variogram
+start_nugget <- min(vg_emp_resid$gamma, na.rm = TRUE)
+start_psill  <- max(vg_emp_resid$gamma, na.rm = TRUE) - start_nugget
+start_range  <- max(vg_emp_resid$dist, na.rm = TRUE) / 3
+
+# try a few common models
+vgm_start_exp <- vgm(psill = start_psill, model = "Exp", nugget = start_nugget, range = start_range)
+vgm_start_sph <- vgm(psill = start_psill, model = "Sph", nugget = start_nugget, range = start_range)
+vgm_start_gau <- vgm(psill = start_psill, model = "Gau", nugget = start_nugget, range = start_range)
+
+fit_exp <- try(fit.variogram(vg_emp_resid, vgm_start_exp), silent = TRUE)
+fit_sph <- try(fit.variogram(vg_emp_resid, vgm_start_sph), silent = TRUE)
+fit_gau <- try(fit.variogram(vg_emp_resid, vgm_start_gau), silent = TRUE)
+
+fit_exp
+fit_sph
+fit_gau
+# SHANNON: The empirical variogram suggested residual spatial dependence at short distances. A spherical model provided a reasonable summary, with an estimated range of approximately 103 m and little fitted nugget variance.
+```
+```{r}
+library(dplyr)
+library(sf)
+library(gstat)
+library(mgcv)
+library(tibble)
+library(ggplot2)
+library(purrr)
+
+fit_resid_variogram <- function(dat, response, preds, crs_obj) {
+
+  keep_cols <- c(response, "x_utm", "y_utm", preds)
+
+  d <- dat %>%
+    select(any_of(keep_cols)) %>%
+    drop_na()
+
+  form <- as.formula(
+    paste(
+      response, "~",
+      paste(
+        c("s(dist_to_current_m, k = 4)", preds[preds != "dist_to_current_m"]),
+        collapse = " + "
+      )
+    )
+  )
+
+  mod <- gam(form, data = d, method = "REML")
+
+  d_sf <- d %>%
+    mutate(resid = residuals(mod)) %>%
+    st_as_sf(coords = c("x_utm", "y_utm"), crs = crs_obj)
+
+  vg_emp <- variogram(resid ~ 1, d_sf)
+
+  start_nugget <- min(vg_emp$gamma, na.rm = TRUE)
+  start_psill  <- max(vg_emp$gamma, na.rm = TRUE) - start_nugget
+  start_range  <- max(vg_emp$dist, na.rm = TRUE) / 3
+
+  starts <- list(
+    Exp = vgm(psill = start_psill, model = "Exp", nugget = start_nugget, range = start_range),
+    Sph = vgm(psill = start_psill, model = "Sph", nugget = start_nugget, range = start_range),
+    Gau = vgm(psill = start_psill, model = "Gau", nugget = start_nugget, range = start_range)
+  )
+
+  fits <- map(starts, ~ try(fit.variogram(vg_emp, .x), silent = TRUE))
+
+  get_sse <- function(v) {
+    if (inherits(v, "try-error")) return(Inf)
+    attr(v, "SSErr")
+  }
+
+  fit_tbl <- tibble(
+    model = names(fits),
+    SSErr = map_dbl(fits, get_sse)
+  ) %>%
+    arrange(SSErr)
+
+  best_name <- fit_tbl$model[1]
+  best_fit <- fits[[best_name]]
+
+  params <- as.data.frame(best_fit)
+
+  nugget_val <- params %>%
+    filter(model == "Nug") %>%
+    summarise(val = sum(psill, na.rm = TRUE)) %>%
+    pull(val)
+
+  partial_sill_val <- params %>%
+    filter(model != "Nug") %>%
+    summarise(val = sum(psill, na.rm = TRUE)) %>%
+    pull(val)
+
+  total_sill_val <- nugget_val + partial_sill_val
+
+  range_val <- params %>%
+    filter(model != "Nug") %>%
+    summarise(val = max(range, na.rm = TRUE)) %>%
+    pull(val)
+
+  nugget_ratio <- ifelse(total_sill_val > 0, nugget_val / total_sill_val, NA_real_)
+
+  list(
+    model = mod,
+    empirical = vg_emp,
+    best_fit = best_fit,
+    fit_table = fit_tbl,
+    metrics = tibble(
+      response = response,
+      best_model = best_name,
+      nugget = nugget_val,
+      partial_sill = partial_sill_val,
+      total_sill = total_sill_val,
+      range = range_val,
+      nugget_ratio = nugget_ratio,
+      dev_expl = summary(mod)$dev.expl
+    )
+  )
+}
+
+idx_preds <- intersect(
+  c(
+    "dist_to_current_m",
+    "p_h_2", "p", "k", "ca", "mg", "mn", "zn",
+    "elevation",
+    "slope",
+    "topographic_wetness_index_usgs",
+    "topographic_position_index",
+    "flow_accumulation_usgs",
+    "ndvi_sept_2022"
+  ),
+  names(analysis_dat)
+)
+
+vg_simpson <- fit_resid_variogram(
+  dat = analysis_dat,
+  response = "simpsons_diversity_index",
+  preds = idx_preds,
+  crs_obj = st_crs(soil_pts_utm)
+)
+
+vg_simpson$metrics
+
+vg_shannon <- fit_resid_variogram(
+  dat = analysis_dat,
+  response = "shannon_weiner_diversity_index",
+  preds = idx_preds,
+  crs_obj = st_crs(soil_pts_utm)
+)
+
+vg_shannon$metrics
+
+vg_evenness <- fit_resid_variogram(
+  dat = analysis_dat,
+  response = "pielous_evenness_index",
+  preds = idx_preds,
+  crs_obj = st_crs(soil_pts_utm)
+)
+
+vg_evenness$metrics
+
+vg_evenness <- fit_resid_variogram(
+  dat = analysis_dat,
+  response = "pielous_evenness_index",
+  preds = idx_preds,
+  crs_obj = st_crs(soil_pts_utm)
+)
+
+vg_evenness$metrics
+```
+
+```{r}
+type_point <- weed_trait_long %>%
+  filter(!is.na(type), type != "", !is.na(weed_count), weed_count > 0) %>%
+  group_by(row_num, type) %>%
+  summarise(type_abundance = sum(weed_count, na.rm = TRUE), .groups = "drop")
+
+point_totals_type <- weed_trait_long %>%
+  filter(!is.na(weed_count), weed_count > 0) %>%
+  group_by(row_num) %>%
+  summarise(total_abundance = sum(weed_count, na.rm = TRUE), .groups = "drop")
+
+type_props <- type_point %>%
+  left_join(point_totals_type, by = "row_num") %>%
+  mutate(prop = type_abundance / total_abundance) %>%
+  select(row_num, type, prop) %>%
+  pivot_wider(names_from = type, values_from = prop, values_fill = 0, names_prefix = "prop_")
+analysis_types <- analysis_dat %>%
+  left_join(type_props, by = "row_num")
+
+vg_broadleaf <- fit_resid_variogram(
+  dat = analysis_types,
+  response = "prop_Broadleaf",
+  preds = idx_preds,
+  crs_obj = st_crs(soil_pts_utm)
+)
+
+vg_broadleaf$metrics
+
+vg_grass <- fit_resid_variogram(
+  dat = analysis_types,
+  response = "prop_Grass",
+  preds = idx_preds,
+  crs_obj = st_crs(soil_pts_utm)
+)
+
+vg_grass$metrics
+
+vg_sedge <- fit_resid_variogram(
+  dat = analysis_types,
+  response = "prop_Sedge",
+  preds = idx_preds,
+  crs_obj = st_crs(soil_pts_utm)
+)
+
+vg_sedge$metrics
+
+season_point <- weed_trait_long %>%
+  filter(!is.na(season), season != "", !is.na(weed_count), weed_count > 0) %>%
+  group_by(row_num, season) %>%
+  summarise(season_abundance = sum(weed_count, na.rm = TRUE), .groups = "drop") %>%
+  left_join(point_totals_type, by = "row_num") %>%
+  mutate(prop = season_abundance / total_abundance) %>%
+  select(row_num, season, prop) %>%
+  pivot_wider(names_from = season, values_from = prop, values_fill = 0, names_prefix = "prop_")
+
+analysis_season <- analysis_dat %>%
+  left_join(season_point, by = "row_num")
+# 
+# vg_warm <- fit_resid_variogram(
+#   dat = analysis_season,
+#   response = "prop_Warm",
+#   preds = idx_preds,
+#   crs_obj = st_crs(soil_pts_utm)
+# )
+# 
+# vg_cool <- fit_resid_variogram(
+#   dat = analysis_season,
+#   response = "prop_Cool",
+#   preds = idx_preds,
+#   crs_obj = st_crs(soil_pts_utm)
+# )
+# 
+# bind_rows(vg_warm$metrics, vg_cool$metrics)
+
+life_point <- weed_trait_long %>%
+  filter(!is.na(life_cycle), life_cycle != "", !is.na(weed_count), weed_count > 0) %>%
+  group_by(row_num, life_cycle) %>%
+  summarise(life_abundance = sum(weed_count, na.rm = TRUE), .groups = "drop") %>%
+  left_join(point_totals_type, by = "row_num") %>%
+  mutate(prop = life_abundance / total_abundance) %>%
+  select(row_num, life_cycle, prop) %>%
+  pivot_wider(names_from = life_cycle, values_from = prop, values_fill = 0, names_prefix = "prop_")
+
+analysis_life <- analysis_dat %>%
+  left_join(life_point, by = "row_num")
+
+vg_annual <- fit_resid_variogram(
+  dat = analysis_life,
+  response = "prop_Annual",
+  preds = idx_preds,
+  crs_obj = st_crs(soil_pts_utm)
+)
+
+vg_perennial <- fit_resid_variogram(
+  dat = analysis_life,
+  response = "prop_Perennial",
+  preds = idx_preds,
+  crs_obj = st_crs(soil_pts_utm)
+)
+
+bind_rows(vg_annual$metrics, vg_perennial$metrics)
+
+family_point <- weed_trait_long %>%
+  filter(!is.na(family), family != "", !is.na(weed_count), weed_count > 0) %>%
+  group_by(row_num, family) %>%
+  summarise(family_abundance = sum(weed_count, na.rm = TRUE), .groups = "drop") %>%
+  left_join(point_totals_type, by = "row_num") %>%
+  mutate(prop = family_abundance / total_abundance)
+
+cyper_prop <- family_point %>%
+  filter(family == "Cyperaceae") %>%
+  select(row_num, prop) %>%
+  rename(prop_Cyperaceae = prop)
+
+analysis_family <- analysis_dat %>%
+  left_join(cyper_prop, by = "row_num")
+
+vg_cyperaceae <- fit_resid_variogram(
+  dat = analysis_family,
+  response = "prop_Cyperaceae",
+  preds = idx_preds,
+  crs_obj = st_crs(soil_pts_utm)
+)
+
+vg_cyperaceae$metrics
+
+plot_variogram_with_metrics <- function(vg_obj, title_text) {
+  vg_line <- variogramLine(vg_obj$best_fit, maxdist = max(vg_obj$empirical$dist), n = 200) %>%
+    as_tibble()
+
+  m <- vg_obj$metrics
+
+  vg_label <- paste0(
+    "Model = ", m$best_model,
+    "\nNugget = ", round(m$nugget, 3),
+    "\nPartial sill = ", round(m$partial_sill, 3),
+    "\nTotal sill = ", round(m$total_sill, 3),
+    "\nRange = ", round(m$range, 1),
+    "\nNugget:sill ratio = ", round(m$nugget_ratio, 2),
+    "\nDeviance explained = ", round(m$dev_expl, 3)
+  )
+
+  ggplot(vg_obj$empirical, aes(x = dist, y = gamma)) +
+    geom_point(size = 2) +
+    geom_line(data = vg_line, aes(x = dist, y = gamma), linewidth = 1) +
+    annotate(
+      "text", x = Inf, y = Inf,
+      label = vg_label, hjust = 1.05, vjust = 1.1, size = 4
+    ) +
+    theme_minimal(base_size = 13) +
+    labs(
+      title = title_text,
+      x = "Distance",
+      y = "Semivariance"
+    )
+}
+
+plot_variogram_with_metrics(vg_shannon, "Residual variogram: Shannon diversity")
+plot_variogram_with_metrics(vg_broadleaf, "Residual variogram: Broadleaf proportion")
+plot_variogram_with_metrics(vg_grass, "Residual variogram: Grass proportion")
+plot_variogram_with_metrics(vg_sedge, "Residual variogram: Sedge proportion")
+#plot_variogram_with_metrics(vg_warm, "Residual variogram: Warm-season proportion")
+```
+
+#### UMAP of weed community composition
+
+```{r}
+
+
+species_wide <- weed_trait_long %>%
+  filter(!is.na(weed_species), weed_species != "", !is.na(weed_count)) %>%
+  group_by(row_num, weed_species) %>%
+  summarise(abund = sum(weed_count, na.rm = TRUE), .groups = "drop") %>%
+  pivot_wider(
+    names_from = weed_species,
+    values_from = abund,
+    values_fill = 0,
+    names_prefix = "sp_"
+  )
+family_wide <- weed_trait_long %>%
+  filter(!is.na(family), family != "", !is.na(weed_count)) %>%
+  group_by(row_num, family) %>%
+  summarise(abund = sum(weed_count, na.rm = TRUE), .groups = "drop") %>%
+  pivot_wider(
+    names_from = family,
+    values_from = abund,
+    values_fill = 0,
+    names_prefix = "fam_"
+  )
+genus_wide <- weed_trait_long %>%
+  filter(!is.na(genus), genus != "", !is.na(weed_count)) %>%
+  group_by(row_num, genus) %>%
+  summarise(abund = sum(weed_count, na.rm = TRUE), .groups = "drop") %>%
+  pivot_wider(
+    names_from = genus,
+    values_from = abund,
+    values_fill = 0,
+    names_prefix = "gen_"
+  )
+type_wide <- weed_trait_long %>%
+  filter(!is.na(type), type != "", !is.na(weed_count)) %>%
+  group_by(row_num, type) %>%
+  summarise(abund = sum(weed_count, na.rm = TRUE), .groups = "drop") %>%
+  pivot_wider(
+    names_from = type,
+    values_from = abund,
+    values_fill = 0,
+    names_prefix = "type_"
+  )
+
+season_wide <- weed_trait_long %>%
+  filter(!is.na(season), season != "", !is.na(weed_count)) %>%
+  group_by(row_num, season) %>%
+  summarise(abund = sum(weed_count, na.rm = TRUE), .groups = "drop") %>%
+  pivot_wider(
+    names_from = season,
+    values_from = abund,
+    values_fill = 0,
+    names_prefix = "season_"
+  )
+
+life_cycle_wide <- weed_trait_long %>%
+  filter(!is.na(life_cycle), life_cycle != "", !is.na(weed_count)) %>%
+  group_by(row_num, life_cycle) %>%
+  summarise(abund = sum(weed_count, na.rm = TRUE), .groups = "drop") %>%
+  pivot_wider(
+    names_from = life_cycle,
+    values_from = abund,
+    values_fill = 0,
+    names_prefix = "life_"
+  )
+
+weed_umap_tbl <- species_wide %>%
+  full_join(family_wide, by = "row_num") %>%
+  full_join(genus_wide, by = "row_num") %>%
+  full_join(type_wide, by = "row_num") %>%
+  full_join(season_wide, by = "row_num") %>%
+  full_join(life_cycle_wide, by = "row_num") %>%
+  mutate(across(-row_num, ~ replace_na(.x, 0)))
+weed_env_umap_tbl <- weed_umap_tbl %>%
+  left_join(
+    point_env %>%
+      st_drop_geometry() %>%
+      select(
+        row_num,
+        dist_to_current_m,
+        p_h_2, p, k, ca, mg, mn, zn,
+        elevation,
+        slope,
+        topographic_wetness_index_usgs,
+        topographic_position_index,
+        flow_accumulation_usgs,
+        stream_power_index,
+        vertical_distance_to_channel_network,
+        ndvi_sept_2022
+      ),
+    by = "row_num"
+  )
+
+weed_cols <- grep("^(sp_|fam_|gen_|type_|season_|life_)", names(weed_env_umap_tbl), value = TRUE)
+
+weed_env_umap_tbl <- weed_env_umap_tbl %>%
+  mutate(across(all_of(weed_cols), ~ replace_na(.x, 0)))
+library(vegan)
+
+weed_block <- weed_env_umap_tbl %>%
+  select(all_of(weed_cols)) %>%
+  as.data.frame()
+
+weed_block_hell <- decostand(weed_block, method = "hellinger")
+
+env_cols <- c(
+  "dist_to_current_m",
+  "p_h_2", "p", "k", "ca", "mg", "mn", "zn",
+  "elevation",
+  "slope",
+  "topographic_wetness_index_usgs",
+  "topographic_position_index",
+  "flow_accumulation_usgs",
+  "stream_power_index",
+  "vertical_distance_to_channel_network",
+  "ndvi_sept_2022"
+)
+
+env_block <- weed_env_umap_tbl %>%
+  select(any_of(env_cols))
+
+umap_input <- bind_cols(
+  as_tibble(weed_block_hell),
+  env_block
+) %>%
+  drop_na()
+
+umap_ids <- weed_env_umap_tbl %>%
+  select(row_num) %>%
+  slice(as.numeric(rownames(umap_input)))
+
+umap_scaled <- scale(umap_input)
+umap_joined <- bind_cols(
+  weed_env_umap_tbl %>% select(row_num),
+  as_tibble(weed_block_hell),
+  env_block
+) %>%
+  drop_na()
+
+umap_ids <- umap_joined %>% select(row_num)
+umap_scaled <- umap_joined %>% select(-row_num) %>% scale()
+library(uwot)
+
+set.seed(123)
+
+umap_out <- umap(
+  umap_scaled,
+  n_neighbors = 15,
+  min_dist = 0.1,
+  metric = "euclidean"
+)
+
+umap_df <- bind_cols(
+  umap_ids,
+  as_tibble(umap_out, .name_repair = ~ c("UMAP1", "UMAP2"))
+)
+library(dbscan)
+
+hdb <- hdbscan(umap_out, minPts = 8)
+umap_df$cluster <- factor(hdb$cluster)
+
+#plot umap w hdbscan
+ggplot(umap_df, aes(x = UMAP1, y = UMAP2, color = cluster)) +
+  geom_point(size = 2, alpha = 0.7) +
+  theme_minimal(base_size = 13) +
+  labs(
+    title = "UMAP of weed community composition and environment",
+    subtitle = "Colored by HDBSCAN cluster"
+  ) +
+  theme(legend.position = "right")
+```
+
+```{r}
+#spatial significances 
+
+# total abundance per point
+point_totals <- weed_trait_long %>%
+  filter(!is.na(weed_count), weed_count > 0) %>%
+  group_by(row_num) %>%
+  summarise(total_abundance = sum(weed_count, na.rm = TRUE), .groups = "drop")
+
+# life cycle
+life_cycle_point <- weed_trait_long %>%
+  filter(!is.na(life_cycle), life_cycle != "", !is.na(weed_count), weed_count > 0) %>%
+  group_by(row_num, life_cycle) %>%
+  summarise(abund = sum(weed_count, na.rm = TRUE), .groups = "drop") %>%
+  pivot_wider(
+    names_from = life_cycle,
+    values_from = abund,
+    values_fill = 0,
+    names_prefix = "life_"
+  )
+
+# season
+season_point <- weed_trait_long %>%
+  filter(!is.na(season), season != "", !is.na(weed_count), weed_count > 0) %>%
+  group_by(row_num, season) %>%
+  summarise(abund = sum(weed_count, na.rm = TRUE), .groups = "drop") %>%
+  pivot_wider(
+    names_from = season,
+    values_from = abund,
+    values_fill = 0,
+    names_prefix = "season_"
+  )
+
+# type
+type_point <- weed_trait_long %>%
+  filter(!is.na(type), type != "", !is.na(weed_count), weed_count > 0) %>%
+  group_by(row_num, type) %>%
+  summarise(abund = sum(weed_count, na.rm = TRUE), .groups = "drop") %>%
+  pivot_wider(
+    names_from = type,
+    values_from = abund,
+    values_fill = 0,
+    names_prefix = "type_"
+  )
+
+trait_combo_point <- weed_trait_long %>%
+  filter(!is.na(life_cycle), !is.na(type), life_cycle != "", type != "",
+         !is.na(weed_count), weed_count > 0) %>%
+  mutate(combo = paste(life_cycle, type, sep = "_")) %>%
+  group_by(row_num, combo) %>%
+  summarise(abund = sum(weed_count, na.rm = TRUE), .groups = "drop") %>%
+  pivot_wider(
+    names_from = combo,
+    values_from = abund,
+    values_fill = 0,
+    names_prefix = "combo_"
+  )
+
+season_type_point <- weed_trait_long %>%
+  filter(!is.na(season), !is.na(type), season != "", type != "",
+         !is.na(weed_count), weed_count > 0) %>%
+  mutate(combo = paste(season, type, sep = "_")) %>%
+  group_by(row_num, combo) %>%
+  summarise(abund = sum(weed_count, na.rm = TRUE), .groups = "drop") %>%
+  pivot_wider(
+    names_from = combo,
+    values_from = abund,
+    values_fill = 0,
+    names_prefix = "combo_"
+  )
+
+trait_predictors <- point_totals %>%
+  left_join(life_cycle_point, by = "row_num") %>%
+  left_join(season_point, by = "row_num") %>%
+  left_join(type_point, by = "row_num") %>%
+  left_join(trait_combo_point, by = "row_num") %>%
+  left_join(season_type_point, by = "row_num") %>%
+  mutate(across(-row_num, ~ replace_na(.x, 0)))
+
+idx_trait_dat <- analysis_dat %>%
+  select(
+    row_num,
+    simpsons_diversity_index,
+    shannon_weiner_diversity_index,
+    pielous_evenness_index,
+    berger_parker_dominance_index
+  ) %>%
+  distinct(row_num, .keep_all = TRUE) %>%
+  left_join(trait_predictors, by = "row_num")
+
+trait_preds_basic <- intersect(
+  c(
+    "life_Annual", "life_Perennial",
+    "season_Cool", "season_Warm",
+    "type_Broadleaf", "type_Grass", "type_Sedge"
+  ),
+  names(idx_trait_dat)
+)
+
+trait_preds_combo1 <- names(idx_trait_dat) %>%
+  str_subset("^combo_(Annual|Perennial)_")
+
+trait_preds_combo2 <- names(idx_trait_dat) %>%
+  str_subset("^combo_(Cool|Warm)_")
+
+trait_preds_all <- unique(c(
+  trait_preds_basic,
+  trait_preds_combo1,
+  trait_preds_combo2
+))
+
+library(mgcv)
+
+
+fit_idx_trait_gam <- function(dat, response, preds) {
+
+  d <- dat %>%
+    select(any_of(c(response, preds))) %>%
+    drop_na()
+
+  if (nrow(d) < 30) return(NULL)
+
+  form <- as.formula(
+    paste(response, "~", paste(preds, collapse = " + "))
+  )
+
+  gam(form, data = d, method = "REML")
+}
+
+drop_one_term_idx <- function(term_to_drop, dat, response, preds) {
+
+  keep_terms <- preds[preds != term_to_drop]
+
+  d <- dat %>%
+    select(any_of(c(response, keep_terms))) %>%
+    drop_na()
+
+  f_drop <- as.formula(
+    paste(response, "~", paste(keep_terms, collapse = " + "))
+  )
+
+  mod_drop <- gam(f_drop, data = d, method = "REML")
+
+  tibble(
+    dropped_term = term_to_drop,
+    dev_expl_drop = summary(mod_drop)$dev.expl
+  )
+}
+
+m_shannon_traits <- fit_idx_trait_gam(
+  dat = idx_trait_dat,
+  response = "shannon_weiner_diversity_index",
+  preds = trait_preds_basic
+)
+
+summary(m_shannon_traits)
+
+shannon_full_dev <- summary(m_shannon_traits)$dev.expl
+
+shannon_trait_importance <- map_dfr(
+  trait_preds_basic,
+  ~ drop_one_term_idx(.x, idx_trait_dat, "shannon_weiner_diversity_index", trait_preds_basic)
+) %>%
+  mutate(
+    full_dev_expl = shannon_full_dev,
+    delta_dev_expl = full_dev_expl - dev_expl_drop
+  ) %>%
+  arrange(desc(delta_dev_expl))
+
+shannon_trait_importance
+
+m_simpson_traits <- fit_idx_trait_gam(
+  dat = idx_trait_dat,
+  response = "simpsons_diversity_index",
+  preds = trait_preds_basic
+)
+
+simpson_full_dev <- summary(m_simpson_traits)$dev.expl
+
+simpson_trait_importance <- map_dfr(
+  trait_preds_basic,
+  ~ drop_one_term_idx(.x, idx_trait_dat, "simpsons_diversity_index", trait_preds_basic)
+) %>%
+  mutate(
+    full_dev_expl = simpson_full_dev,
+    delta_dev_expl = full_dev_expl - dev_expl_drop
+  ) %>%
+  arrange(desc(delta_dev_expl))
+
+simpson_trait_importance
+
+m_evenness_traits <- fit_idx_trait_gam(
+  dat = idx_trait_dat,
+  response = "pielous_evenness_index",
+  preds = trait_preds_basic
+)
+
+evenness_full_dev <- summary(m_evenness_traits)$dev.expl
+
+evenness_trait_importance <- map_dfr(
+  trait_preds_basic,
+  ~ drop_one_term_idx(.x, idx_trait_dat, "pielous_evenness_index", trait_preds_basic)
+) %>%
+  mutate(
+    full_dev_expl = evenness_full_dev,
+    delta_dev_expl = full_dev_expl - dev_expl_drop
+  ) %>%
+  arrange(desc(delta_dev_expl))
+
+evenness_trait_importance
+
+m_dom_traits <- fit_idx_trait_gam(
+  dat = idx_trait_dat,
+  response = "berger_parker_dominance_index",
+  preds = trait_preds_basic
+)
+
+dom_full_dev <- summary(m_dom_traits)$dev.expl
+
+dom_trait_importance <- map_dfr(
+  trait_preds_basic,
+  ~ drop_one_term_idx(.x, idx_trait_dat, "berger_parker_dominance_index", trait_preds_basic)
+) %>%
+  mutate(
+    full_dev_expl = dom_full_dev,
+    delta_dev_expl = full_dev_expl - dev_expl_drop
+  ) %>%
+  arrange(desc(delta_dev_expl))
+
+dom_trait_importance
+
+m_shannon_combo <- fit_idx_trait_gam(
+  dat = idx_trait_dat,
+  response = "shannon_weiner_diversity_index",
+  preds = trait_preds_combo1
+)
+
+shannon_combo_full_dev <- summary(m_shannon_combo)$dev.expl
+
+shannon_combo_importance <- map_dfr(
+  trait_preds_combo1,
+  ~ drop_one_term_idx(.x, idx_trait_dat, "shannon_weiner_diversity_index", trait_preds_combo1)
+) %>%
+  mutate(
+    full_dev_expl = shannon_combo_full_dev,
+    delta_dev_expl = full_dev_expl - dev_expl_drop
+  ) %>%
+  arrange(desc(delta_dev_expl))
+
+shannon_combo_importance
+
+m_shannon_season_combo <- fit_idx_trait_gam(
+  dat = idx_trait_dat,
+  response = "shannon_weiner_diversity_index",
+  preds = trait_preds_combo2
+)
+
+shannon_season_combo_full_dev <- summary(m_shannon_season_combo)$dev.expl
+
+shannon_season_combo_importance <- map_dfr(
+  trait_preds_combo2,
+  ~ drop_one_term_idx(.x, idx_trait_dat, "shannon_weiner_diversity_index", trait_preds_combo2)
+) %>%
+  mutate(
+    full_dev_expl = shannon_season_combo_full_dev,
+    delta_dev_expl = full_dev_expl - dev_expl_drop
+  ) %>%
+  arrange(desc(delta_dev_expl))
+
+shannon_season_combo_importance
+
+
+ggplot(
+  shannon_trait_importance,
+  aes(x = reorder(dropped_term, delta_dev_expl), y = delta_dev_expl)
+) +
+  geom_col() +
+  coord_flip() +
+  theme_minimal(base_size = 13) +
+  labs(
+    title = "Trait importance for Shannon diversity",
+    subtitle = "Decrease in deviance explained when each trait group is removed",
+    x = NULL,
+    y = "Decrease in deviance explained"
+  )
+```
+
+
+
+
+

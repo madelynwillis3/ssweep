@@ -421,13 +421,24 @@ soil_pts_utm_coords <- soil_pts_utm %>%
 
 # disturbance values already extracted above:
 # dist_vals
+dist_vals <- terra::extract(current_dist_bin, vect(soil_pts_utm)) %>% select(-ID)
 # dist_dvals
-
+dist_dvals <- terra::extract(dist_to_dist, vect(soil_pts_utm)) %>% select(-ID)
 point_base <- soil_pts_utm_coords %>%
   bind_cols(dist_vals, dist_dvals) %>%
   janitor::clean_names() %>%
   mutate(row_num = as.character(row_num))
-
+#idx_keep
+idx_keep <- surface_sampling_idx %>%
+  mutate(row_num = as.character(row_num)) %>%
+  clean_names() %>%
+  select(
+    row_num,
+    simpsons_diversity_index,
+    shannon_weiner_diversity_index,
+    pielous_evenness_index,
+    berger_parker_dominance_index
+  )
 # point_env now includes projected coords
 point_env <- point_base %>%
   left_join(idx_keep, by = "row_num") %>%
@@ -2276,6 +2287,15 @@ bind_rows(
 ```
 
 
+```{r}
+#look @ functional groups, seasonality, perennial vs annual:
+
+#count total numbers for each family, then functional group, then seasonality, then life history strategy:
+family_env_dat %>%
+  group_by(family) %>%
+  summarise(total_family_abundance = sum(family_abundance, na.rm = TRUE), .groups = "drop") %>%
+  arrange(desc(total_family_abundance))
+```
 
 
 
