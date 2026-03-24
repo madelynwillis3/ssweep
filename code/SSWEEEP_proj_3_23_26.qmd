@@ -56,7 +56,15 @@ weed_id_long <- weed_id_tax %>%
     names_to = "row_num",
     values_to = "weed_count"
   ) %>%
-  rename(weed_species = `Common Name`) %>%
+  rename(
+    weed_species = `Common Name`,
+    genus = Genus,
+    species = Species,
+    family = Family,
+    life_cycle = `Life Cycle`,
+    season = Season,
+    type = Type
+  ) %>%
   mutate(
     row_num = as.character(row_num),
     weed_count = as.numeric(weed_count)
@@ -64,8 +72,7 @@ weed_id_long <- weed_id_tax %>%
 
 surface_sampling_weed <- surface_sampling %>%
   mutate(row_num = as.character(row_num)) %>%
-  left_join(weed_id_long, by = "row_num") %>%
-  clean_names()
+  left_join(weed_id_long, by = "row_num")
 ```
 ```{r}
 ssweep <- read_excel("../data/SSWEEP_data_with_tax_and_indices_02_2026.xlsx", sheet = "SSWEEP")
@@ -211,8 +218,9 @@ weed_trait_long <- surface_sampling_weed %>%
       TRUE ~ NA_character_
     ),
     season = case_when(
-      str_detect(str_to_lower(season), "warm") ~ "Warm",
-      str_detect(str_to_lower(season), "cool") ~ "Cool",
+      str_detect(str_to_lower(season), "summer") & str_detect(str_to_lower(season), "winter") ~ "Warm/Cool",
+      str_detect(str_to_lower(season), "summer") ~ "Warm",
+      str_detect(str_to_lower(season), "winter") ~ "Cool",
       TRUE ~ NA_character_
     )
   )
@@ -861,7 +869,7 @@ type_summary
 
 ```
 
-```{r optional-sedge-followup, eval=FALSE, message=FALSE, warning=FALSE}
+```{r optional-sedge-followup, message=FALSE, warning=FALSE}
 library(patchwork)
 
 #-----------------------------
@@ -3035,7 +3043,694 @@ ggplot(
   )
 ```
 
+```{r}
+env_preds <- intersect(
+  c(
+    "p_h_2", "p", "k", "ca", "mg", "mn", "zn",
+    "elevation",
+    "slope",
+    "topographic_wetness_index_usgs",
+    "topographic_position_index",
+    "flow_accumulation_usgs",
+    "stream_power_index",
+    "vertical_distance_to_channel_network",
+    "ndvi_sept_2022"
+  ),
+  names(point_env)
+)
 
 
+fit_idx_env_gam <- function(dat, response, preds) {
+
+  keep_vars <- c(response, "dist_to_current_m", "x_utm", "y_utm", preds)
+
+  d <- dat %>%
+    select(any_of(keep_vars)) %>%
+    mutate(across(everything(), as.numeric)) %>%
+    drop_na()
+
+  if (nrow(d) < 30) stop("Not enough complete rows.")
+
+  rhs <- paste(
+    c("s(dist_to_current_m, k = 4)", preds, "s(x_utm, y_utm, k = 15)"),
+    collapse = " + "
+  )
+
+  form <- as.formula(paste(response, "~", rhs))
+
+  gam(form, data = d, family = gaussian(), method = "REML")
+}
+drop_one_term_idx_env <- function(term_to_drop, dat, response, preds) {
+
+  base_terms <- c(
+    "s(dist_to_current_m, k = 4)",
+    preds,
+    "s(x_utm, y_utm, k = 15)"
+  )
+
+  keep_terms <- base_terms[base_terms != term_to_drop]
+
+  keep_vars <- c(response, "dist_to_current_m", "x_utm", "y_utm", preds)
+
+  d <- dat %>%
+    select(any_of(keep_vars)) %>%
+    mutate(across(everything(), as.numeric)) %>%
+    drop_na()
+
+  if (nrow(d) < 30) stop("Not enough complete rows.")
+
+  form_drop <- as.formula(
+    paste(response, "~", paste(keep_terms, collapse = " + "))
+  )
+
+  mod_drop <- gam(form_drop, data = d, family = gaussian(), method = "REML")
+
+  tibble(
+    dropped_term = term_to_drop,
+    dev_expl_drop = summary(mod_drop)$dev.expl
+  )
+}
+
+m_shannon_env <- fit_idx_env_gam(
+  dat = analysis_dat,
+  response = "shannon_weiner_diversity_index",
+  preds = env_preds
+)
+
+shannon_full_dev <- summary(m_shannon_env)$dev.expl
+
+shannon_terms_to_test <- c(
+  "s(dist_to_current_m, k = 4)",
+  env_preds,
+  "s(x_utm, y_utm, k = 15)"
+)
+
+shannon_drop_importance <- map_dfr(
+  shannon_terms_to_test,
+  ~ drop_one_term_idx_env(.x, analysis_dat, "shannon_weiner_diversity_index", env_preds)
+) %>%
+  mutate(
+    full_dev_expl = shannon_full_dev,
+    delta_dev_expl = full_dev_expl - dev_expl_drop
+  ) %>%
+  arrange(desc(delta_dev_expl))
+
+shannon_drop_importance
+summary(m_shannon_env)
+
+m_simpson_env <- fit_idx_env_gam(
+  dat = analysis_dat,
+  response = "simpsons_diversity_index",
+  preds = env_preds
+)
+
+simpson_full_dev <- summary(m_simpson_env)$dev.expl
+
+simpson_drop_importance <- map_dfr(
+  shannon_terms_to_test,
+  ~ drop_one_term_idx_env(.x, analysis_dat, "simpsons_diversity_index", env_preds)
+) %>%
+  mutate(
+    full_dev_expl = simpson_full_dev,
+    delta_dev_expl = full_dev_expl - dev_expl_drop
+  ) %>%
+  arrange(desc(delta_dev_expl))
+
+simpson_drop_importance
+summary(m_simpson_env)
+
+m_evenness_env <- fit_idx_env_gam(
+  dat = analysis_dat,
+  response = "pielous_evenness_index",
+  preds = env_preds
+)
+
+evenness_full_dev <- summary(m_evenness_env)$dev.expl
+
+evenness_drop_importance <- map_dfr(
+  shannon_terms_to_test,
+  ~ drop_one_term_idx_env(.x, analysis_dat, "pielous_evenness_index", env_preds)
+) %>%
+  mutate(
+    full_dev_expl = evenness_full_dev,
+    delta_dev_expl = full_dev_expl - dev_expl_drop
+  ) %>%
+  arrange(desc(delta_dev_expl))
+
+evenness_drop_importance
+summary(m_evenness_env)
+
+point_totals <- weed_trait_long %>%
+  filter(!is.na(weed_count), weed_count > 0) %>%
+  group_by(row_num) %>%
+  summarise(total_abundance = sum(weed_count, na.rm = TRUE), .groups = "drop")
+
+life_point <- weed_trait_long %>%
+  filter(!is.na(life_cycle), life_cycle != "", !is.na(weed_count), weed_count > 0) %>%
+  group_by(row_num, life_cycle) %>%
+  summarise(life_abundance = sum(weed_count, na.rm = TRUE), .groups = "drop")
+
+season_point <- weed_trait_long %>%
+  filter(!is.na(season), season != "", !is.na(weed_count), weed_count > 0) %>%
+  group_by(row_num, season) %>%
+  summarise(season_abundance = sum(weed_count, na.rm = TRUE), .groups = "drop")
+
+fit_prop_env_gam <- function(dat, success_var, fail_var, preds) {
+
+  keep_vars <- c(success_var, fail_var, "dist_to_current_m", "x_utm", "y_utm", preds)
+
+  d <- dat %>%
+    select(any_of(keep_vars)) %>%
+    mutate(across(everything(), as.numeric)) %>%
+    drop_na()
+
+  if (nrow(d) < 30) stop("Not enough complete rows.")
+
+  rhs <- paste(
+    c("s(dist_to_current_m, k = 4)", preds, "s(x_utm, y_utm, k = 15)"),
+    collapse = " + "
+  )
+
+  form <- as.formula(
+    paste("cbind(", success_var, ",", fail_var, ") ~ ", rhs, sep = "")
+  )
+
+  gam(form, data = d, family = quasibinomial(), method = "REML")
+}
+
+drop_one_term_prop_env <- function(term_to_drop, dat, success_var, fail_var, preds) {
+
+  base_terms <- c(
+    "s(dist_to_current_m, k = 4)",
+    preds,
+    "s(x_utm, y_utm, k = 15)"
+  )
+
+  keep_terms <- base_terms[base_terms != term_to_drop]
+
+  keep_vars <- c(success_var, fail_var, "dist_to_current_m", "x_utm", "y_utm", preds)
+
+  d <- dat %>%
+    select(any_of(keep_vars)) %>%
+    mutate(across(everything(), as.numeric)) %>%
+    drop_na()
+
+  if (nrow(d) < 30) stop("Not enough complete rows.")
+
+  form_drop <- as.formula(
+    paste(
+      "cbind(", success_var, ",", fail_var, ") ~ ",
+      paste(keep_terms, collapse = " + "),
+      sep = ""
+    )
+  )
+
+  mod_drop <- gam(form_drop, data = d, family = quasibinomial(), method = "REML")
+
+  tibble(
+    dropped_term = term_to_drop,
+    dev_expl_drop = summary(mod_drop)$dev.expl
+  )
+}
+
+annual_dat <- life_point %>%
+  filter(life_cycle == "Annual") %>%
+  left_join(point_totals, by = "row_num") %>%
+  left_join(point_env, by = "row_num") %>%
+  mutate(
+    annual_abundance = as.numeric(life_abundance),
+    other_abundance = as.numeric(total_abundance - life_abundance),
+    annual_prop = annual_abundance / total_abundance
+  ) %>%
+  filter(
+    total_abundance >= 3,
+    !is.na(dist_to_current_m),
+    !is.na(x_utm),
+    !is.na(y_utm)
+  )
+
+m_annual_env <- fit_prop_env_gam(
+  dat = annual_dat,
+  success_var = "annual_abundance",
+  fail_var = "other_abundance",
+  preds = env_preds
+)
+
+annual_full_dev <- summary(m_annual_env)$dev.expl
+
+annual_terms_to_test <- c(
+  "s(dist_to_current_m, k = 4)",
+  env_preds,
+  "s(x_utm, y_utm, k = 15)"
+)
+
+annual_drop_importance <- map_dfr(
+  annual_terms_to_test,
+  ~ drop_one_term_prop_env(.x, annual_dat, "annual_abundance", "other_abundance", env_preds)
+) %>%
+  mutate(
+    full_dev_expl = annual_full_dev,
+    delta_dev_expl = full_dev_expl - dev_expl_drop
+  ) %>%
+  arrange(desc(delta_dev_expl))
+
+annual_drop_importance
+summary(m_annual_env)
+
+perennial_dat <- life_point %>%
+  filter(life_cycle == "Perennial") %>%
+  left_join(point_totals, by = "row_num") %>%
+  left_join(point_env, by = "row_num") %>%
+  mutate(
+    perennial_abundance = as.numeric(life_abundance),
+    other_abundance = as.numeric(total_abundance - life_abundance),
+    perennial_prop = perennial_abundance / total_abundance
+  ) %>%
+  filter(
+    total_abundance >= 3,
+    !is.na(dist_to_current_m),
+    !is.na(x_utm),
+    !is.na(y_utm)
+  )
+
+m_perennial_env <- fit_prop_env_gam(
+  dat = perennial_dat,
+  success_var = "perennial_abundance",
+  fail_var = "other_abundance",
+  preds = env_preds
+)
+
+perennial_full_dev <- summary(m_perennial_env)$dev.expl
+
+perennial_drop_importance <- map_dfr(
+  annual_terms_to_test,
+  ~ drop_one_term_prop_env(.x, perennial_dat, "perennial_abundance", "other_abundance", env_preds)
+) %>%
+  mutate(
+    full_dev_expl = perennial_full_dev,
+    delta_dev_expl = full_dev_expl - dev_expl_drop
+  ) %>%
+  arrange(desc(delta_dev_expl))
+
+perennial_drop_importance
+summary(m_perennial_env)
+
+warm_dat <- season_point %>%
+  filter(season == "Warm") %>%
+  left_join(point_totals, by = "row_num") %>%
+  left_join(point_env, by = "row_num") %>%
+  mutate(
+    warm_abundance = as.numeric(season_abundance),
+    other_abundance = as.numeric(total_abundance - season_abundance),
+    warm_prop = warm_abundance / total_abundance
+  ) %>%
+  filter(
+    total_abundance >= 3,
+    !is.na(dist_to_current_m),
+    !is.na(x_utm),
+    !is.na(y_utm)
+  )
+
+
+
+label_terms <- function(df) {
+  df %>%
+    mutate(
+      term_label = case_when(
+        dropped_term == "s(dist_to_current_m, k = 4)" ~ "Distance to disturbance",
+        dropped_term == "s(x_utm, y_utm, k = 15)" ~ "Spatial smooth",
+        dropped_term == "p_h_2" ~ "pH",
+        dropped_term == "p" ~ "P",
+        dropped_term == "k" ~ "K",
+        dropped_term == "ca" ~ "Ca",
+        dropped_term == "mg" ~ "Mg",
+        dropped_term == "mn" ~ "Mn",
+        dropped_term == "zn" ~ "Zn",
+        dropped_term == "elevation" ~ "Elevation",
+        dropped_term == "slope" ~ "Slope",
+        dropped_term == "topographic_wetness_index_usgs" ~ "Topographic wetness",
+        dropped_term == "topographic_position_index" ~ "Topographic position",
+        dropped_term == "flow_accumulation_usgs" ~ "Flow accumulation",
+        dropped_term == "stream_power_index" ~ "Stream power",
+        dropped_term == "vertical_distance_to_channel_network" ~ "Vertical distance to channel",
+        dropped_term == "ndvi_sept_2022" ~ "NDVI (Sept 2022)",
+        TRUE ~ dropped_term
+      )
+    )
+}
+
+shannon_drop_importance_labeled <- label_terms(shannon_drop_importance)
+
+ggplot(
+  shannon_drop_importance_labeled,
+  aes(x = reorder(term_label, delta_dev_expl), y = delta_dev_expl)
+) +
+  geom_col() +
+  coord_flip() +
+  theme_minimal(base_size = 13) +
+  labs(
+    title = "Predictor importance for Shannon diversity",
+    subtitle = "Decrease in deviance explained when each term is removed",
+    x = NULL,
+    y = "Decrease in deviance explained"
+  )
+
+#Environmental predictors explained relatively little variation in Shannon diversity, Simpson diversity, and Pielou’s evenness, and neither distance to disturbance nor the spatial smooth was significant in the full models. In contrast, annual and perennial composition showed stronger responses, with annual proportion increasing and perennial proportion decreasing along the pH gradient. Perennial proportion also declined with elevation, indicating that life-history composition was more strongly structured by edaphic setting than were the weed diversity indices.
+```
+
+```{r}
+library(ggplot2)
+library(dplyr)
+library(tibble)
+library(scales)
+library(patchwork)
+
+#-----------------------------------
+# helper: partial prediction for a linear predictor
+#-----------------------------------
+make_partial_pred_linear <- function(mod, dat, focal_var, grid_n = 200) {
+  newdat <- dat[rep(1, grid_n), , drop = FALSE]
+
+  for (nm in names(newdat)) {
+    if (is.numeric(newdat[[nm]])) {
+      newdat[[nm]] <- median(dat[[nm]], na.rm = TRUE)
+    }
+  }
+
+  newdat[[focal_var]] <- seq(
+    min(dat[[focal_var]], na.rm = TRUE),
+    max(dat[[focal_var]], na.rm = TRUE),
+    length.out = grid_n
+  )
+
+  pr <- predict(mod, newdata = newdat, type = "link", se.fit = TRUE)
+
+  tibble(
+    x = newdat[[focal_var]],
+    fit = plogis(pr$fit),
+    lower = plogis(pr$fit - 1.96 * pr$se.fit),
+    upper = plogis(pr$fit + 1.96 * pr$se.fit)
+  )
+}
+
+#-----------------------------------
+# helper: get parametric-term label from mgcv summary
+#-----------------------------------
+get_param_label <- function(mod, term_name) {
+  sm <- summary(mod)
+
+  if (is.null(sm$p.table)) return("parametric table missing")
+
+  pt <- as.data.frame(sm$p.table)
+  pt$term <- rownames(pt)
+
+  rr <- pt[pt$term == term_name, , drop = FALSE]
+
+  if (nrow(rr) == 0) {
+    return(
+      paste0(
+        "term not found\nwanted: ", term_name,
+        "\navailable: ", paste(pt$term, collapse = ", ")
+      )
+    )
+  }
+
+  estimate <- rr[1, "Estimate"]
+  pval <- rr[1, ncol(rr) - 1]  # usually Pr(>|t|) or Pr(>|z|)
+
+  direction <- ifelse(estimate > 0, "linear ↑", "linear ↓")
+
+  paste0(
+    direction,
+    "\nβ = ", round(estimate, 3),
+    "\np = ", signif(pval, 3)
+  )
+}
+
+#-----------------------------------
+# helper: create label df inside panel
+#-----------------------------------
+make_label_df <- function(dat, xvar, yvar, label_text,
+                          x_frac = 0.97, y_frac = 0.95) {
+  xr <- range(dat[[xvar]], na.rm = TRUE)
+  yr <- range(dat[[yvar]], na.rm = TRUE)
+
+  tibble(
+    x = xr[1] + x_frac * (xr[2] - xr[1]),
+    y = yr[1] + y_frac * (yr[2] - yr[1]),
+    label = label_text
+  )
+}
+
+#-----------------------------------
+# raw proportions for plotting
+#-----------------------------------
+annual_plot_raw <- annual_dat %>%
+  mutate(annual_prop = annual_abundance / (annual_abundance + other_abundance))
+
+perennial_plot_raw <- perennial_dat %>%
+  mutate(perennial_prop = perennial_abundance / (perennial_abundance + other_abundance))
+
+#-----------------------------------
+# prediction data
+#-----------------------------------
+annual_ph_pred <- make_partial_pred_linear(m_annual_env, annual_dat, "p_h_2")
+annual_elev_pred <- make_partial_pred_linear(m_annual_env, annual_dat, "elevation")
+
+perennial_ph_pred <- make_partial_pred_linear(m_perennial_env, perennial_dat, "p_h_2")
+perennial_elev_pred <- make_partial_pred_linear(m_perennial_env, perennial_dat, "elevation")
+
+#-----------------------------------
+# metric labels
+#-----------------------------------
+annual_ph_lab <- get_param_label(m_annual_env, "p_h_2")
+annual_elev_lab <- get_param_label(m_annual_env, "elevation")
+
+perennial_ph_lab <- get_param_label(m_perennial_env, "p_h_2")
+perennial_elev_lab <- get_param_label(m_perennial_env, "elevation")
+
+annual_ph_lab
+annual_elev_lab
+perennial_ph_lab
+perennial_elev_lab
+
+#-----------------------------------
+# label data frames
+#-----------------------------------
+annual_ph_lab_df <- make_label_df(annual_plot_raw, "p_h_2", "annual_prop", annual_ph_lab)
+annual_elev_lab_df <- make_label_df(annual_plot_raw, "elevation", "annual_prop", annual_elev_lab)
+
+perennial_ph_lab_df <- make_label_df(perennial_plot_raw, "p_h_2", "perennial_prop", perennial_ph_lab)
+perennial_elev_lab_df <- make_label_df(perennial_plot_raw, "elevation", "perennial_prop", perennial_elev_lab)
+
+#-----------------------------------
+# theme
+#-----------------------------------
+theme_trait <- theme_minimal(base_size = 13) +
+  theme(
+    panel.grid.minor = element_blank(),
+    panel.grid.major.x = element_blank(),
+    axis.title = element_text(face = "bold"),
+    plot.title = element_text(face = "bold", size = 14),
+    plot.subtitle = element_text(size = 11),
+    plot.caption = element_text(size = 10, hjust = 0),
+    legend.position = "none"
+  )
+
+#-----------------------------------
+# annual pH
+#-----------------------------------
+p_annual_ph <- ggplot() +
+  geom_point(
+    data = annual_plot_raw,
+    aes(x = p_h_2, y = annual_prop),
+    alpha = 0.15,
+    size = 1.5,
+    position = position_jitter(width = 0.03, height = 0.003)
+  ) +
+  geom_ribbon(
+    data = annual_ph_pred,
+    aes(x = x, ymin = lower, ymax = upper),
+    alpha = 0.22
+  ) +
+  geom_line(
+    data = annual_ph_pred,
+    aes(x = x, y = fit),
+    linewidth = 1.1
+  ) +
+  geom_label(
+    data = annual_ph_lab_df,
+    aes(x = x, y = y, label = label),
+    inherit.aes = FALSE,
+    hjust = 1,
+    vjust = 1,
+    size = 3.6,
+    linewidth = 0.25
+  ) +
+  scale_y_continuous(
+    labels = percent_format(accuracy = 1),
+    limits = c(0, NA),
+    expand = expansion(mult = c(0, 0.08))
+  ) +
+  labs(
+    title = "Annual proportion vs pH",
+    subtitle = "Adjusted partial effect from full GAM",
+    x = "pH",
+    y = "Predicted annual proportion"
+  ) +
+  coord_cartesian(clip = "off") +
+  theme_trait
+
+#-----------------------------------
+# annual elevation
+#-----------------------------------
+p_annual_elev <- ggplot() +
+  geom_point(
+    data = annual_plot_raw,
+    aes(x = elevation, y = annual_prop),
+    alpha = 0.15,
+    size = 1.5,
+    position = position_jitter(width = 0.8, height = 0.003)
+  ) +
+  geom_ribbon(
+    data = annual_elev_pred,
+    aes(x = x, ymin = lower, ymax = upper),
+    alpha = 0.22
+  ) +
+  geom_line(
+    data = annual_elev_pred,
+    aes(x = x, y = fit),
+    linewidth = 1.1
+  ) +
+  geom_label(
+    data = annual_elev_lab_df,
+    aes(x = x, y = y, label = label),
+    inherit.aes = FALSE,
+    hjust = 1,
+    vjust = 1,
+    size = 3.6,
+    linewidth = 0.25
+  ) +
+  scale_y_continuous(
+    labels = percent_format(accuracy = 1),
+    limits = c(0, NA),
+    expand = expansion(mult = c(0, 0.08))
+  ) +
+  labs(
+    title = "Annual proportion vs elevation",
+    subtitle = "Adjusted partial effect from full GAM",
+    x = "Elevation",
+    y = NULL
+  ) +
+  coord_cartesian(clip = "off") +
+  theme_trait
+
+#-----------------------------------
+# perennial pH
+#-----------------------------------
+p_perennial_ph <- ggplot() +
+  geom_point(
+    data = perennial_plot_raw,
+    aes(x = p_h_2, y = perennial_prop),
+    alpha = 0.15,
+    size = 1.5,
+    position = position_jitter(width = 0.03, height = 0.003)
+  ) +
+  geom_ribbon(
+    data = perennial_ph_pred,
+    aes(x = x, ymin = lower, ymax = upper),
+    alpha = 0.22
+  ) +
+  geom_line(
+    data = perennial_ph_pred,
+    aes(x = x, y = fit),
+    linewidth = 1.1
+  ) +
+  geom_label(
+    data = perennial_ph_lab_df,
+    aes(x = x, y = y, label = label),
+    inherit.aes = FALSE,
+    hjust = 1,
+    vjust = 1,
+    size = 3.6,
+    linewidth = 0.25
+  ) +
+  scale_y_continuous(
+    labels = percent_format(accuracy = 1),
+    limits = c(0, NA),
+    expand = expansion(mult = c(0, 0.08))
+  ) +
+  labs(
+    title = "Perennial proportion vs pH",
+    subtitle = "Adjusted partial effect from full GAM",
+    x = "pH",
+    y = "Predicted perennial proportion"
+  ) +
+  coord_cartesian(clip = "off") +
+  theme_trait
+
+#-----------------------------------
+# perennial elevation
+#-----------------------------------
+p_perennial_elev <- ggplot() +
+  geom_point(
+    data = perennial_plot_raw,
+    aes(x = elevation, y = perennial_prop),
+    alpha = 0.15,
+    size = 1.5,
+    position = position_jitter(width = 0.8, height = 0.003)
+  ) +
+  geom_ribbon(
+    data = perennial_elev_pred,
+    aes(x = x, ymin = lower, ymax = upper),
+    alpha = 0.22
+  ) +
+  geom_line(
+    data = perennial_elev_pred,
+    aes(x = x, y = fit),
+    linewidth = 1.1
+  ) +
+  geom_label(
+    data = perennial_elev_lab_df,
+    aes(x = x, y = y, label = label),
+    inherit.aes = FALSE,
+    hjust = 1,
+    vjust = 1,
+    size = 3.6,
+    linewidth = 0.25
+  ) +
+  scale_y_continuous(
+    labels = percent_format(accuracy = 1),
+    limits = c(0, NA),
+    expand = expansion(mult = c(0, 0.08))
+  ) +
+  labs(
+    title = "Perennial proportion vs elevation",
+    subtitle = "Adjusted partial effect from full GAM",
+    x = "Elevation",
+    y = NULL
+  ) +
+  coord_cartesian(clip = "off") +
+  theme_trait
+
+#-----------------------------------
+# combine
+#-----------------------------------
+annual_perennial_fig <- (p_annual_ph + p_annual_elev) /
+  (p_perennial_ph + p_perennial_elev) +
+  plot_annotation(
+    title = "Adjusted effects of pH and elevation on annual and perennial weed proportions",
+    subtitle = "Lines show model-predicted proportions from full GAMs; other covariates held at typical values.",
+    caption = "Points are raw observed proportions for context only. Shaded ribbons show 95% confidence intervals."
+  )
+
+annual_perennial_fig
+
+#Annual weed proportion increased significantly with pH (β = 1.069, p = 0.00095), while perennial proportion decreased significantly with pH (β = -1.27, p = 9.04 × 10^-5). Perennial proportion also declined with elevation (β = -0.244, p = 0.0482), whereas the positive relationship between annual proportion and elevation was weaker and not statistically significant (β = 0.201, p = 0.13). Together, these results suggest that weed life-history composition was more strongly structured by edaphic conditions, particularly pH, than by elevation alone.
+```
+
+```{r}
+
+```
 
 
