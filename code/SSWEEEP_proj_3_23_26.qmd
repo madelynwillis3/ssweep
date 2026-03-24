@@ -3042,6 +3042,7 @@ ggplot(
     y = "Decrease in deviance explained"
   )
 ```
+#### Environmental predictors of diversity indices
 
 ```{r}
 env_preds <- intersect(
@@ -3397,6 +3398,7 @@ ggplot(
 
 #Environmental predictors explained relatively little variation in Shannon diversity, Simpson diversity, and Pielou’s evenness, and neither distance to disturbance nor the spatial smooth was significant in the full models. In contrast, annual and perennial composition showed stronger responses, with annual proportion increasing and perennial proportion decreasing along the pH gradient. Perennial proportion also declined with elevation, indicating that life-history composition was more strongly structured by edaphic setting than were the weed diversity indices.
 ```
+##### visualize significant env predictors for annual and perennial proportions
 
 ```{r}
 library(ggplot2)
@@ -3728,8 +3730,1318 @@ annual_perennial_fig
 
 #Annual weed proportion increased significantly with pH (β = 1.069, p = 0.00095), while perennial proportion decreased significantly with pH (β = -1.27, p = 9.04 × 10^-5). Perennial proportion also declined with elevation (β = -0.244, p = 0.0482), whereas the positive relationship between annual proportion and elevation was weaker and not statistically significant (β = 0.201, p = 0.13). Together, these results suggest that weed life-history composition was more strongly structured by edaphic conditions, particularly pH, than by elevation alone.
 ```
+#### Community composition ordination and envfit
 
 ```{r}
+library(dplyr)
+library(tidyr)
+library(vegan)
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+library(vegan)
+library(ggplot2)
+library(tibble)
+library(sf)
+library(adespatial)
+library(permute)
+
+# point x species abundance matrix
+comm_tbl <- weed_trait_long %>%
+  filter(!is.na(weed_species), weed_species != "", !is.na(weed_count)) %>%
+  group_by(row_num, weed_species) %>%
+  summarise(abund = sum(weed_count, na.rm = TRUE), .groups = "drop") %>%
+  pivot_wider(
+    names_from = weed_species,
+    values_from = abund,
+    values_fill = 0
+  )
+
+comm_mat <- comm_tbl %>%
+  column_to_rownames("row_num") %>%
+  as.matrix()
+
+env_dat <- analysis_dat %>%
+  select(
+    row_num,
+    dist_to_current_m,
+    p_h_2, p, k, ca, mg, mn, zn,
+    elevation,
+    slope,
+    topographic_wetness_index_usgs,
+    topographic_position_index,
+    flow_accumulation_usgs,
+    ndvi_sept_2022
+  ) %>%
+  distinct(row_num, .keep_all = TRUE)
+
+# keep only shared points and align order
+shared_ids <- intersect(rownames(comm_mat), env_dat$row_num)
+
+comm_mat <- comm_mat[shared_ids, , drop = FALSE]
+
+env_dat <- env_dat %>%
+  filter(row_num %in% shared_ids) %>%
+  arrange(match(row_num, shared_ids))
+all(rownames(comm_mat) == env_dat$row_num)
+
+comm_bray <- vegdist(comm_mat, method = "bray")
+
+set.seed(123)
+
+nmds <- metaMDS(
+  comm_mat,
+  distance = "bray",
+  k = 2,
+  trymax = 200,
+  autotransform = FALSE
+)
+
+nmds
+
+nmds_scores <- as.data.frame(scores(nmds, display = "sites")) %>%
+  tibble::rownames_to_column("row_num") %>%
+  left_join(env_dat, by = "row_num")
+
+ggplot(nmds_scores, aes(NMDS1, NMDS2, color = dist_to_current_m)) +
+  geom_point(size = 3) +
+  theme_minimal(base_size = 13) +
+  labs(
+    title = "NMDS of weed community composition",
+    subtitle = paste("Bray-Curtis; stress =", round(nmds$stress, 3)),
+    color = "Distance to\ndisturbance"
+  )
+
+ggplot(nmds_scores, aes(NMDS1, NMDS2, color = p_h_2)) +
+  geom_point(size = 3) +
+  theme_minimal(base_size = 13) +
+  labs(
+    title = "NMDS of weed community composition",
+    subtitle = paste("Bray-Curtis; stress =", round(nmds$stress, 3)),
+    color = "pH"
+  )
+envfit_vars <- env_dat %>%
+  select(
+    dist_to_current_m,
+    p_h_2, p, k, ca, mg, mn, zn,
+    elevation,
+    slope,
+    topographic_wetness_index_usgs,
+    topographic_position_index,
+    flow_accumulation_usgs,
+    ndvi_sept_2022
+  ) %>%
+  drop_na()
+
+# keep same rows for scores
+fit_ids <- env_dat$row_num[complete.cases(envfit_vars)]
+nmds_fit_scores <- nmds_scores %>%
+  filter(row_num %in% fit_ids) %>%
+  arrange(match(row_num, fit_ids))
+
+#-----------------------------------
+# build COMPLETE dataset for envfit
+#-----------------------------------
+envfit_dat <- nmds_scores %>%
+  select(
+    row_num,
+    NMDS1, NMDS2,
+    dist_to_current_m,
+    p_h_2, p, k, ca, mg, mn, zn,
+    elevation,
+    slope,
+    topographic_wetness_index_usgs,
+    topographic_position_index,
+    flow_accumulation_usgs,
+    ndvi_sept_2022
+  ) %>%
+  drop_na()
+
+# split into ordination + env
+ord_mat <- as.matrix(envfit_dat[, c("NMDS1", "NMDS2")])
+
+env_mat <- envfit_dat %>%
+  select(
+    dist_to_current_m,
+    p_h_2, p, k, ca, mg, mn, zn,
+    elevation,
+    slope,
+    topographic_wetness_index_usgs,
+    topographic_position_index,
+    flow_accumulation_usgs,
+    ndvi_sept_2022
+  )
+
+#-----------------------------------
+# run envfit
+#-----------------------------------
+envfit_obj <- envfit(
+  ord_mat,
+  env_mat,
+  permutations = 999
+)
+
+envfit_obj
+
+ef_vec <- as.data.frame(scores(envfit_obj, display = "vectors")) %>%
+  tibble::rownames_to_column("variable")
+
+ef_p <- as.data.frame(envfit_obj$vectors$pvals) %>%
+  tibble::rownames_to_column("variable") %>%
+  rename(p_value = `envfit_obj$vectors$pvals`)
+
+ef_plot <- ef_vec %>%
+  left_join(ef_p, by = "variable") %>%
+  filter(p_value <= 0.05)
+
+ggplot(envfit_dat, aes(NMDS1, NMDS2)) +
+  geom_point(aes(color = dist_to_current_m), size = 3) +
+  geom_segment(
+    data = ef_plot,
+    aes(x = 0, y = 0, xend = NMDS1, yend = NMDS2),
+    arrow = arrow(length = unit(0.2, "cm")),
+    inherit.aes = FALSE
+  ) +
+  geom_text(
+    data = ef_plot,
+    aes(x = NMDS1, y = NMDS2, label = variable),
+    size = 3,
+    inherit.aes = FALSE
+  ) +
+  theme_minimal(base_size = 13) +
+  labs(
+    title = "NMDS with significant environmental vectors",
+    subtitle = paste("Bray-Curtis; stress =", round(nmds$stress, 3)),
+    color = "Distance to\ndisturbance"
+  )
+
+perm_dat <- env_dat %>%
+  select(
+    row_num,
+    dist_to_current_m,
+    p_h_2,
+    ca,
+    mg,
+    elevation,
+    slope,
+    topographic_wetness_index_usgs,
+    ndvi_sept_2022
+  ) %>%
+  drop_na()
+
+perm_ids <- perm_dat$row_num
+comm_perm <- comm_mat[perm_ids, , drop = FALSE]
+
+adonis2(
+  comm_perm ~ dist_to_current_m + p_h_2 + ca + mg + elevation + slope +
+    topographic_wetness_index_usgs + ndvi_sept_2022,
+  data = perm_dat,
+  method = "bray",
+  permutations = 999,
+  by = "margin"
+)
+
+perm_dat <- perm_dat %>%
+  mutate(
+    dist_group = cut(
+      dist_to_current_m,
+      breaks = quantile(dist_to_current_m, probs = c(0, 1/3, 2/3, 1), na.rm = TRUE),
+      include.lowest = TRUE,
+      labels = c("Near", "Mid", "Far")
+    )
+  )
+
+bd <- betadisper(
+  vegdist(comm_perm, method = "bray"),
+  group = perm_dat$dist_group
+)
+
+anova(bd)
+permutest(bd)
+
+#Weed community composition varied significantly along elevation, pH, Ca, and distance to disturbance (p < 0.05), with elevation representing the strongest environmental gradient. Ordination vector fitting also identified elevation, pH, and topographic wetness as significant correlates of community structure. However, the effect of distance to disturbance was comparatively modest, and significant multivariate dispersion among disturbance groups indicates that grouped composition differences should be looked at. 
+
+#-----------------------------------
+# community matrix
+#-----------------------------------
+comm_tbl <- weed_trait_long %>%
+  filter(!is.na(weed_species), weed_species != "", !is.na(weed_count)) %>%
+  group_by(row_num, weed_species) %>%
+  summarise(abund = sum(weed_count, na.rm = TRUE), .groups = "drop") %>%
+  pivot_wider(
+    names_from = weed_species,
+    values_from = abund,
+    values_fill = 0
+  )
+
+comm_mat <- comm_tbl %>%
+  column_to_rownames("row_num") %>%
+  as.matrix()
+
+#-----------------------------------
+# environment
+#-----------------------------------
+env_full <- analysis_dat %>%
+  select(
+    row_num,
+    dist_to_current_m,
+    p_h_2, p, ca, mg,
+    elevation,
+    slope,
+    topographic_wetness_index_usgs,
+    ndvi_sept_2022,
+    x_utm, y_utm
+  ) %>%
+  distinct(row_num, .keep_all = TRUE)
+
+shared_ids <- intersect(rownames(comm_mat), env_full$row_num)
+
+comm_mat <- comm_mat[shared_ids, , drop = FALSE]
+
+env_full <- env_full %>%
+  filter(row_num %in% shared_ids) %>%
+  arrange(match(row_num, shared_ids))
+
+all(rownames(comm_mat) == env_full$row_num)
+
+#-----------------------------------
+# community matrix
+#-----------------------------------
+comm_tbl <- weed_trait_long %>%
+  filter(!is.na(weed_species), weed_species != "", !is.na(weed_count)) %>%
+  group_by(row_num, weed_species) %>%
+  summarise(abund = sum(weed_count, na.rm = TRUE), .groups = "drop") %>%
+  pivot_wider(
+    names_from = weed_species,
+    values_from = abund,
+    values_fill = 0
+  )
+
+comm_mat <- comm_tbl %>%
+  column_to_rownames("row_num") %>%
+  as.matrix()
+
+#-----------------------------------
+# environment
+#-----------------------------------
+env_full <- analysis_dat %>%
+  select(
+    row_num,
+    dist_to_current_m,
+    p_h_2, p, ca, mg,
+    elevation,
+    slope,
+    topographic_wetness_index_usgs,
+    ndvi_sept_2022,
+    x_utm, y_utm
+  ) %>%
+  distinct(row_num, .keep_all = TRUE)
+
+shared_ids <- intersect(rownames(comm_mat), env_full$row_num)
+
+comm_mat <- comm_mat[shared_ids, , drop = FALSE]
+
+env_full <- env_full %>%
+  filter(row_num %in% shared_ids) %>%
+  arrange(match(row_num, shared_ids))
+
+all(rownames(comm_mat) == env_full$row_num)
+env_full <- env_full %>%
+  mutate(
+    dist_group = cut(
+      dist_to_current_m,
+      breaks = quantile(
+        dist_to_current_m,
+        probs = c(0, 1/3, 2/3, 1),
+        na.rm = TRUE
+      ),
+      include.lowest = TRUE,
+      labels = c("Near", "Mid", "Far")
+    )
+  )
+
+table(env_full$dist_group, useNA = "ifany")
+pairwise_permanova <- function(comm, groups, permutations = 999) {
+  levs <- levels(droplevels(groups))
+  combs <- combn(levs, 2, simplify = FALSE)
+
+  bind_rows(lapply(combs, function(xx) {
+    keep <- groups %in% xx
+    comm_sub <- comm[keep, , drop = FALSE]
+    grp_sub <- droplevels(groups[keep])
+
+    ad <- adonis2(comm_sub ~ grp_sub, method = "bray", permutations = permutations)
+
+    tibble(
+      group1 = xx[1],
+      group2 = xx[2],
+      F = ad$F[1],
+      R2 = ad$R2[1],
+      p_value = ad$`Pr(>F)`[1]
+    )
+  })) %>%
+    mutate(p_adj_BH = p.adjust(p_value, method = "BH"))
+}
+
+pairwise_betadisper <- function(comm, groups, permutations = 999) {
+  levs <- levels(droplevels(groups))
+  combs <- combn(levs, 2, simplify = FALSE)
+
+  bind_rows(lapply(combs, function(xx) {
+    keep <- groups %in% xx
+    comm_sub <- comm[keep, , drop = FALSE]
+    grp_sub <- droplevels(groups[keep])
+
+    d <- vegdist(comm_sub, method = "bray")
+    bd <- betadisper(d, grp_sub)
+    pt <- permutest(bd, permutations = permutations)
+
+    tibble(
+      group1 = xx[1],
+      group2 = xx[2],
+      F = pt$tab[1, "F"],
+      p_value = pt$tab[1, "Pr(>F)"]
+    )
+  })) %>%
+    mutate(p_adj_BH = p.adjust(p_value, method = "BH"))
+}
+
+pairwise_perm <- pairwise_permanova(
+  comm = comm_mat,
+  groups = env_full$dist_group,
+  permutations = 999
+)
+
+pairwise_disp <- pairwise_betadisper(
+  comm = comm_mat,
+  groups = env_full$dist_group,
+  permutations = 999
+)
+
+pairwise_perm
+pairwise_disp
+
+bd_all <- betadisper(
+  vegdist(comm_mat, method = "bray"),
+  env_full$dist_group
+)
+
+anova(bd_all)
+permutest(bd_all)
+
+plot(bd_all)
+boxplot(bd_all)
+
+disp_df <- data.frame(
+  row_num = names(bd_all$distances),
+  dist_group = env_full$dist_group[match(names(bd_all$distances), env_full$row_num)],
+  distance_to_centroid = bd_all$distances
+)
+
+ggplot(disp_df, aes(dist_group, distance_to_centroid)) +
+  geom_boxplot() +
+  theme_minimal(base_size = 13) +
+  labs(
+    title = "Multivariate dispersion by disturbance group",
+    x = "Disturbance group",
+    y = "Distance to group centroid"
+  )
+#Pairwise multivariate tests indicated that the Mid-distance group differed significantly from both the Near and Far groups, whereas Near and Far did not differ significantly. However, pairwise dispersion tests were also significant for Near–Mid and Mid–Far comparisons, indicating that these differences reflect both compositional shift and differences in within-group heterogeneity.
+#-----------------------------------
+# complete-case dbRDA dataset
+#-----------------------------------
+dbrda_dat <- env_full %>%
+  select(
+    row_num,
+    dist_to_current_m,
+    p_h_2,
+    ca,
+    mg,
+    elevation,
+    slope,
+    topographic_wetness_index_usgs,
+    ndvi_sept_2022,
+    x_utm, y_utm,
+    dist_group
+  ) %>%
+  drop_na()
+
+dbrda_ids <- dbrda_dat$row_num
+
+comm_dbrda <- comm_mat[dbrda_ids, , drop = FALSE]
+
+all(rownames(comm_dbrda) == dbrda_dat$row_num)
+
+#-----------------------------------
+# dbRDA
+#-----------------------------------
+dbrda_mod <- capscale(
+  comm_dbrda ~ dist_to_current_m + p_h_2 + ca + mg + elevation + slope +
+    topographic_wetness_index_usgs + ndvi_sept_2022,
+  data = dbrda_dat,
+  distance = "bray"
+)
+
+summary(dbrda_mod)
+anova(dbrda_mod, permutations = 999)
+anova(dbrda_mod, by = "margin", permutations = 999)
+anova(dbrda_mod, by = "axis", permutations = 999)
+
+
+site_sc <- as.data.frame(scores(dbrda_mod, display = "sites")) %>%
+  rownames_to_column("row_num") %>%
+  left_join(env_full, by = "row_num")
+
+ggplot(site_sc, aes(CAP1, CAP2, color = dist_group)) +
+  geom_point(size = 3) +
+  stat_ellipse() +
+  theme_minimal(base_size = 13) +
+  labs(
+    title = "dbRDA of weed community composition",
+    subtitle = "Bray-Curtis constrained by disturbance and environment",
+    color = "Disturbance group"
+  )
+
+ggplot(site_sc, aes(CAP1, CAP2, color = dist_to_current_m)) +
+  geom_point(size = 3) +
+  theme_minimal(base_size = 13) +
+  labs(
+    title = "dbRDA of weed community composition",
+    subtitle = "Colored by distance to disturbance",
+    color = "Distance to\ndisturbance"
+  )
+
+bp <- as.data.frame(scores(dbrda_mod, display = "bp")) %>%
+  rownames_to_column("variable")
+
+ggplot(site_sc, aes(CAP1, CAP2)) +
+  geom_point(aes(color = dist_group), size = 3) +
+  geom_segment(
+    data = bp,
+    aes(x = 0, y = 0, xend = CAP1, yend = CAP2),
+    arrow = arrow(length = unit(0.2, "cm")),
+    inherit.aes = FALSE
+  ) +
+  geom_text(
+    data = bp,
+    aes(x = CAP1, y = CAP2, label = variable),
+    inherit.aes = FALSE,
+    size = 3
+  ) +
+  theme_minimal(base_size = 13) +
+  labs(
+    title = "dbRDA with constrained environmental vectors",
+    color = "Disturbance group"
+  )
+#-----------------------------------
+# complete-case variation partitioning dataset
+#-----------------------------------
+vp_dat <- env_full %>%
+  select(
+    row_num,
+    dist_to_current_m,
+    p_h_2,
+    ca,
+    mg,
+    elevation,
+    slope,
+    topographic_wetness_index_usgs,
+    ndvi_sept_2022,
+    x_utm, y_utm
+  ) %>%
+  drop_na()
+
+vp_ids <- vp_dat$row_num
+comm_vp <- comm_mat[vp_ids, , drop = FALSE]
+
+all(rownames(comm_vp) == vp_dat$row_num)
+
+# Hellinger transform
+comm_hell <- decostand(comm_vp, method = "hellinger")
+
+# blocks
+dist_block <- vp_dat %>% select(dist_to_current_m)
+
+env_block <- vp_dat %>%
+  select(
+    p_h_2, ca, mg, elevation, slope,
+    topographic_wetness_index_usgs,
+    ndvi_sept_2022
+  )
+
+coords <- vp_dat %>% select(x_utm, y_utm) %>% as.matrix()
+dbmem_obj <- dbmem(coords, silent = FALSE)
+space_block <- as.data.frame(dbmem_obj)
+
+# variation partitioning
+vp <- varpart(comm_hell, dist_block, env_block, space_block)
+
+vp
+plot(vp, bg = c("tomato", "skyblue", "palegreen"))
+
+mod_dist_unique <- rda(comm_hell, dist_block, cbind(env_block, space_block))
+anova(mod_dist_unique, permutations = 999)
+
+mod_dist_unique <- rda(comm_hell, dist_block, cbind(env_block, space_block))
+anova(mod_dist_unique, permutations = 999)
+
+mod_space_unique <- rda(comm_hell, space_block, cbind(dist_block, env_block))
+anova(mod_space_unique, permutations = 999)
+
+mod_dist_env_cond_space <- rda(comm_hell, cbind(dist_block, env_block), space_block)
+anova(mod_dist_env_cond_space, permutations = 999)
+
+site_sc %>%
+  ggplot(aes(x_utm, y_utm, color = CAP1)) +
+  geom_point(size = 3) +
+  coord_equal() +
+  theme_minimal(base_size = 13) +
+  labs(
+    title = "Spatial pattern of dbRDA axis 1",
+    x = "UTM X",
+    y = "UTM Y",
+    color = "CAP1"
+  )
+
+#When distance to disturbance was grouped into Near, Mid, and Far classes, the Mid group differed significantly in community composition from both Near and Far groups. Near and Far did not differ significantly from each other. Dispersion also differed for the Near–Mid and Mid–Far comparisons, indicating that the Mid group was not only compositionally distinct in average assemblage, but also differed in within-group heterogeneity. 
+
+	#Interpretation takeaway: the disturbance gradient may contain a transitional middle zone where weed composition is more distinct and/or more heterogeneous than at the ends of the gradient? 
+```
+##### SIMPER ANALYSIS
+
+```{r}
+#I wonder if we can group some level of weeds to see what specifically is changing the compositions in the bins. Like genus or family or even species...
+
+#---------
+#SIMPER:
+#---------
+
+# SIMPER (Similarity Percentage) analysis is a method used in ecology to identify which species contribute most to the observed differences in community composition between groups of samples. It breaks down the overall dissimilarity between groups into contributions from each species, allowing researchers to pinpoint which species are driving the differences.
+
+# make sure group vector matches comm_mat rows
+group_vec <- env_full$dist_group
+names(group_vec) <- env_full$row_num
+group_vec <- factor(group_vec[rownames(comm_mat)])
+
+simper_sp <- simper(comm_mat, group = group_vec, permutations = 999)
+
+summary(simper_sp)
+
+#family:
+family_tbl <- weed_trait_long %>%
+  filter(!is.na(family), family != "", !is.na(weed_count)) %>%
+  group_by(row_num, family) %>%
+  summarise(abund = sum(weed_count, na.rm = TRUE), .groups = "drop") %>%
+  pivot_wider(
+    names_from = family,
+    values_from = abund,
+    values_fill = 0
+  )
+
+family_mat <- family_tbl %>%
+  column_to_rownames("row_num") %>%
+  as.matrix()
+
+shared_ids <- intersect(rownames(family_mat), env_full$row_num)
+family_mat <- family_mat[shared_ids, , drop = FALSE]
+
+group_vec_fam <- env_full$dist_group[match(rownames(family_mat), env_full$row_num)]
+
+simper_fam <- simper(family_mat, group = factor(group_vec_fam), permutations = 999)
+
+summary(simper_fam)
+
+#genus
+genus_tbl <- weed_trait_long %>%
+  filter(!is.na(genus), genus != "", !is.na(weed_count)) %>%
+  group_by(row_num, genus) %>%
+  summarise(abund = sum(weed_count, na.rm = TRUE), .groups = "drop") %>%
+  pivot_wider(
+    names_from = genus,
+    values_from = abund,
+    values_fill = 0
+  )
+
+genus_mat <- genus_tbl %>%
+  column_to_rownames("row_num") %>%
+  as.matrix()
+
+shared_ids <- intersect(rownames(genus_mat), env_full$row_num)
+genus_mat <- genus_mat[shared_ids, , drop = FALSE]
+
+group_vec_gen <- env_full$dist_group[match(rownames(genus_mat), env_full$row_num)]
+
+simper_gen <- simper(genus_mat, group = factor(group_vec_gen), permutations = 999)
+
+summary(simper_gen)
+
+family_bin_summary <- weed_trait_long %>%
+  filter(!is.na(family), family != "", !is.na(weed_count)) %>%
+  left_join(env_full %>% select(row_num, dist_group), by = "row_num") %>%
+  group_by(dist_group, family) %>%
+  summarise(
+    mean_abundance = mean(weed_count, na.rm = TRUE),
+    total_abundance = sum(weed_count, na.rm = TRUE),
+    n_points_present = n_distinct(row_num[weed_count > 0]),
+    .groups = "drop"
+  ) %>%
+  arrange(dist_group, desc(total_abundance))
+
+family_bin_summary
+
+species_bin_summary <- weed_trait_long %>%
+  filter(!is.na(weed_species), weed_species != "", !is.na(weed_count)) %>%
+  left_join(env_full %>% select(row_num, dist_group), by = "row_num") %>%
+  group_by(dist_group, weed_species) %>%
+  summarise(
+    mean_abundance = mean(weed_count, na.rm = TRUE),
+    total_abundance = sum(weed_count, na.rm = TRUE),
+    n_points_present = n_distinct(row_num[weed_count > 0]),
+    .groups = "drop"
+  ) %>%
+  arrange(dist_group, desc(total_abundance))
+
+species_bin_summary
+
+top_families <- weed_trait_long %>%
+  filter(!is.na(family), family != "", !is.na(weed_count)) %>%
+  group_by(family) %>%
+  summarise(total_abundance = sum(weed_count, na.rm = TRUE), .groups = "drop") %>%
+  slice_max(total_abundance, n = 10) %>%
+  pull(family)
+
+family_plot_dat <- weed_trait_long %>%
+  filter(family %in% top_families, !is.na(weed_count)) %>%
+  left_join(env_full %>% select(row_num, dist_group), by = "row_num") %>%
+  group_by(dist_group, family) %>%
+  summarise(mean_abundance = mean(weed_count, na.rm = TRUE), .groups = "drop")
+
+ggplot(family_plot_dat, aes(dist_group, mean_abundance, fill = dist_group)) +
+  geom_col() +
+  facet_wrap(~ family, scales = "free_y") +
+  theme_minimal(base_size = 12) +
+  labs(
+    title = "Top weed families across disturbance-distance bins",
+    x = "Distance bin",
+    y = "Mean abundance"
+  )
+
+library(indicspecies)
+
+ind_sp <- multipatt(
+  comm_mat,
+  cluster = group_vec,
+  func = "IndVal.g",
+  control = how(nperm = 999)
+)
+
+summary(ind_sp)
+
+# #Sedges seem important
+  # Especially:
+    # Annual Sedge
+    # Field Sedge
+    # Cyperaceae overall
+  ## These show up repeatedly, especially in Mid-related contrasts. That fits your earlier results where sedges were responsive in some of the trait/environment models.
+
+# SIMPER indicated that compositional differences among disturbance-distance bins were driven primarily by a subset of taxa rather than uniform community turnover. The Mid bin differed from both Near and Far largely through shifts in sedge-related taxa (especially Cyperaceae, including Annual Sedge and Field Sedge), along with several cool-season or winter-annual broadleaf taxa such as Corn Spurrey, Corn Speedwell, False flax, and Wild Radish. In contrast, Near and Far showed weaker overall separation, consistent with the earlier pairwise PERMANOVA results.
+```
+
+#### Nested GAM comparisons
+
+```{r}
+#nested indices
+#why nest? To see how much of the variation in diversity indices can be explained by distance to disturbance alone, environment alone, spatial structure alone, and then combinations of these factors. This can help us understand the relative importance of these different drivers in shaping weed diversity patterns.
+env_preds <- intersect(
+  c(
+    "p_h_2", "ca", "mg", "elevation", "slope",
+    "topographic_wetness_index_usgs", "ndvi_sept_2022"
+  ),
+  names(analysis_dat)
+)
+
+fit_nested_gams_gaussian <- function(dat, response, env_preds) {
+  d <- dat %>%
+    select(any_of(c(response, "dist_to_current_m", "x_utm", "y_utm", env_preds))) %>%
+    mutate(across(everything(), as.numeric)) %>%
+    drop_na()
+
+  f1 <- as.formula(paste(response, "~ s(dist_to_current_m, k = 4)"))
+  f2 <- as.formula(paste(response, "~", paste(env_preds, collapse = " + ")))
+  f3 <- as.formula(paste(response, "~ s(x_utm, y_utm, k = 15)"))
+  f4 <- as.formula(paste(response, "~ s(dist_to_current_m, k = 4) +", paste(env_preds, collapse = " + ")))
+  f5 <- as.formula(paste(response, "~ s(dist_to_current_m, k = 4) + s(x_utm, y_utm, k = 15)"))
+  f6 <- as.formula(paste(response, "~", paste(env_preds, collapse = " + "), "+ s(x_utm, y_utm, k = 15)"))
+  f7 <- as.formula(paste(response, "~ s(dist_to_current_m, k = 4) +", paste(env_preds, collapse = " + "), "+ s(x_utm, y_utm, k = 15)"))
+
+  mods <- list(
+    dist_only = gam(f1, data = d, family = gaussian(), method = "REML"),
+    env_only = gam(f2, data = d, family = gaussian(), method = "REML"),
+    space_only = gam(f3, data = d, family = gaussian(), method = "REML"),
+    dist_env = gam(f4, data = d, family = gaussian(), method = "REML"),
+    dist_space = gam(f5, data = d, family = gaussian(), method = "REML"),
+    env_space = gam(f6, data = d, family = gaussian(), method = "REML"),
+    full = gam(f7, data = d, family = gaussian(), method = "REML")
+  )
+
+  bind_rows(lapply(names(mods), function(nm) {
+    sm <- summary(mods[[nm]])
+    tibble(
+      response = response,
+      model = nm,
+      n = nrow(mods[[nm]]$model),
+      dev_expl = sm$dev.expl,
+      adj_r_sq = sm$r.sq
+    )
+  }))
+}
+
+nested_shannon <- fit_nested_gams_gaussian(analysis_dat, "shannon_weiner_diversity_index", env_preds)
+nested_simpson <- fit_nested_gams_gaussian(analysis_dat, "simpsons_diversity_index", env_preds)
+nested_evenness <- fit_nested_gams_gaussian(analysis_dat, "pielous_evenness_index", env_preds)
+nested_dominance <- fit_nested_gams_gaussian(analysis_dat, "berger_parker_dominance_index", env_preds)
+
+bind_rows(
+  nested_shannon,
+  nested_simpson,
+  nested_evenness,
+  nested_dominance
+)
+
+#nested comparisons for proportion responses:
+fit_nested_gams_prop <- function(dat, success_var, fail_var, response_name, env_preds) {
+  d <- dat %>%
+    select(any_of(c(success_var, fail_var, "dist_to_current_m", "x_utm", "y_utm", env_preds))) %>%
+    mutate(across(everything(), as.numeric)) %>%
+    drop_na()
+
+  f1 <- as.formula(paste("cbind(", success_var, ",", fail_var, ") ~ s(dist_to_current_m, k = 4)", sep = ""))
+  f2 <- as.formula(paste("cbind(", success_var, ",", fail_var, ") ~ ", paste(env_preds, collapse = " + "), sep = ""))
+  f3 <- as.formula(paste("cbind(", success_var, ",", fail_var, ") ~ s(x_utm, y_utm, k = 15)", sep = ""))
+  f4 <- as.formula(paste("cbind(", success_var, ",", fail_var, ") ~ s(dist_to_current_m, k = 4) + ", paste(env_preds, collapse = " + "), sep = ""))
+  f5 <- as.formula(paste("cbind(", success_var, ",", fail_var, ") ~ s(dist_to_current_m, k = 4) + s(x_utm, y_utm, k = 15)", sep = ""))
+  f6 <- as.formula(paste("cbind(", success_var, ",", fail_var, ") ~ ", paste(env_preds, collapse = " + "), " + s(x_utm, y_utm, k = 15)", sep = ""))
+  f7 <- as.formula(paste("cbind(", success_var, ",", fail_var, ") ~ s(dist_to_current_m, k = 4) + ", paste(env_preds, collapse = " + "), " + s(x_utm, y_utm, k = 15)", sep = ""))
+
+  mods <- list(
+    dist_only = gam(f1, data = d, family = quasibinomial(), method = "REML"),
+    env_only = gam(f2, data = d, family = quasibinomial(), method = "REML"),
+    space_only = gam(f3, data = d, family = quasibinomial(), method = "REML"),
+    dist_env = gam(f4, data = d, family = quasibinomial(), method = "REML"),
+    dist_space = gam(f5, data = d, family = quasibinomial(), method = "REML"),
+    env_space = gam(f6, data = d, family = quasibinomial(), method = "REML"),
+    full = gam(f7, data = d, family = quasibinomial(), method = "REML")
+  )
+
+  bind_rows(lapply(names(mods), function(nm) {
+    sm <- summary(mods[[nm]])
+    tibble(
+      response = response_name,
+      model = nm,
+      n = nrow(mods[[nm]]$model),
+      dev_expl = sm$dev.expl
+    )
+  }))
+}
+
+nested_annual <- fit_nested_gams_prop(annual_dat, "annual_abundance", "other_abundance", "annual_prop", env_preds)
+nested_perennial <- fit_nested_gams_prop(perennial_dat, "perennial_abundance", "other_abundance", "perennial_prop", env_preds)
+nested_broadleaf <- fit_nested_gams_prop(broadleaf_dat, "broadleaf_abundance", "other_abundance", "broadleaf_prop", env_preds)
+nested_grass <- fit_nested_gams_prop(grass_dat, "grass_abundance", "other_abundance", "grass_prop", env_preds)
+nested_sedge <- fit_nested_gams_prop(sedge_dat, "sedge_abundance", "other_abundance", "sedge_prop", env_preds)
+
+nested_main <- bind_rows(
+  nested_annual,
+  nested_perennial,
+  nested_broadleaf,
+  nested_grass,
+  nested_sedge
+)
+
+nested_main
+#plot:
+
+
+ggplot(nested_main, aes(x = model, y = dev_expl)) +
+  geom_col() +
+  coord_flip() +
+  facet_wrap(~ response, scales = "free_y") +
+  theme_minimal(base_size = 12) +
+  labs(
+    title = "Nested model comparisons for main weed group responses",
+    x = NULL,
+    y = "Deviance explained"
+  )
+nested_indices <- bind_rows(
+  nested_shannon,
+  nested_simpson,
+  nested_evenness,
+  nested_dominance
+)
+
+ggplot(nested_indices, aes(x = model, y = dev_expl)) +
+  geom_col() +
+  coord_flip() +
+  facet_wrap(~ response, scales = "free_y") +
+  theme_minimal(base_size = 12) +
+  labs(
+    title = "Nested model comparisons for weed indices",
+    x = NULL,
+    y = "Deviance explained"
+  )
+# Nested model comparisons showed that distance to disturbance alone explained negligible variation in weed diversity indices and only modest variation in annual/perennial composition. In contrast, environmental covariates and spatial structure accounted for substantially more deviance, and models including both environment and space consistently outperformed disturbance-only models. For most responses, adding distance to disturbance to the environment + space model produced only minimal additional gain, indicating that disturbance effects were weak relative to broader environmental and spatial patterning.
+```
+#### Non-linearity checks
+```{r}
+
+annual_test_dat <- annual_dat %>%
+  select(
+    annual_abundance,
+    other_abundance,
+    dist_to_current_m,
+    x_utm,
+    y_utm,
+    p_h_2,
+    elevation,
+    ca,
+    mg,
+    slope,
+    topographic_wetness_index_usgs,
+    ndvi_sept_2022
+  ) %>%
+  mutate(across(everything(), as.numeric)) %>%
+  drop_na()
+perennial_test_dat <- perennial_dat %>%
+  select(
+    perennial_abundance,
+    other_abundance,
+    dist_to_current_m,
+    x_utm,
+    y_utm,
+    p_h_2,
+    elevation,
+    ca,
+    mg,
+    slope,
+    topographic_wetness_index_usgs,
+    ndvi_sept_2022
+  ) %>%
+  mutate(across(everything(), as.numeric)) %>%
+  drop_na()
+m_annual_elev_linear <- gam(
+  cbind(annual_abundance, other_abundance) ~
+    p_h_2 + elevation + ca + mg + slope +
+    topographic_wetness_index_usgs + ndvi_sept_2022 +
+    s(dist_to_current_m, k = 4) +
+    s(x_utm, y_utm, k = 15),
+  data = annual_test_dat,
+  family = quasibinomial(),
+  method = "REML"
+)
+
+m_annual_elev_smooth <- gam(
+  cbind(annual_abundance, other_abundance) ~
+    p_h_2 + s(elevation, k = 4) + ca + mg + slope +
+    topographic_wetness_index_usgs + ndvi_sept_2022 +
+    s(dist_to_current_m, k = 4) +
+    s(x_utm, y_utm, k = 15),
+  data = annual_test_dat,
+  family = quasibinomial(),
+  method = "REML"
+)
+
+tibble(
+  model = c("annual elevation linear", "annual elevation smooth"),
+  dev_expl = c(summary(m_annual_elev_linear)$dev.expl,
+               summary(m_annual_elev_smooth)$dev.expl)
+)
+
+summary(m_annual_elev_smooth)
+
+m_annual_elev_linear <- gam(
+  cbind(annual_abundance, other_abundance) ~
+    p_h_2 + elevation + ca + mg + slope +
+    topographic_wetness_index_usgs + ndvi_sept_2022 +
+    s(dist_to_current_m, k = 4) +
+    s(x_utm, y_utm, k = 15),
+  data = annual_test_dat,
+  family = quasibinomial(),
+  method = "REML"
+)
+
+m_annual_elev_smooth <- gam(
+  cbind(annual_abundance, other_abundance) ~
+    p_h_2 + s(elevation, k = 4) + ca + mg + slope +
+    topographic_wetness_index_usgs + ndvi_sept_2022 +
+    s(dist_to_current_m, k = 4) +
+    s(x_utm, y_utm, k = 15),
+  data = annual_test_dat,
+  family = quasibinomial(),
+  method = "REML"
+)
+
+tibble(
+  model = c("annual elevation linear", "annual elevation smooth"),
+  dev_expl = c(summary(m_annual_elev_linear)$dev.expl,
+               summary(m_annual_elev_smooth)$dev.expl)
+)
+
+summary(m_annual_elev_smooth)
+
+perennial_test_dat <- perennial_dat %>%
+  select(
+    perennial_abundance, other_abundance,
+    dist_to_current_m, x_utm, y_utm,
+    p_h_2, elevation,
+    ca, mg, slope, topographic_wetness_index_usgs, ndvi_sept_2022
+  ) %>%
+  mutate(across(everything(), as.numeric)) %>%
+  drop_na()
+
+m_perennial_ph_linear <- gam(
+  cbind(perennial_abundance, other_abundance) ~
+    p_h_2 + elevation + ca + mg + slope +
+    topographic_wetness_index_usgs + ndvi_sept_2022 +
+    s(dist_to_current_m, k = 4) +
+    s(x_utm, y_utm, k = 15),
+  data = perennial_test_dat,
+  family = quasibinomial(),
+  method = "REML"
+)
+
+m_perennial_ph_smooth <- gam(
+  cbind(perennial_abundance, other_abundance) ~
+    s(p_h_2, k = 4) + elevation + ca + mg + slope +
+    topographic_wetness_index_usgs + ndvi_sept_2022 +
+    s(dist_to_current_m, k = 4) +
+    s(x_utm, y_utm, k = 15),
+  data = perennial_test_dat,
+  family = quasibinomial(),
+  method = "REML"
+)
+
+tibble(
+  model = c("perennial pH linear", "perennial pH smooth"),
+  dev_expl = c(summary(m_perennial_ph_linear)$dev.expl,
+               summary(m_perennial_ph_smooth)$dev.expl)
+)
+
+summary(m_perennial_ph_smooth)
+
+perennial_test_dat <- perennial_dat %>%
+  select(
+    perennial_abundance, other_abundance,
+    dist_to_current_m, x_utm, y_utm,
+    p_h_2, elevation,
+    ca, mg, slope, topographic_wetness_index_usgs, ndvi_sept_2022
+  ) %>%
+  mutate(across(everything(), as.numeric)) %>%
+  drop_na()
+
+m_perennial_ph_linear <- gam(
+  cbind(perennial_abundance, other_abundance) ~
+    p_h_2 + elevation + ca + mg + slope +
+    topographic_wetness_index_usgs + ndvi_sept_2022 +
+    s(dist_to_current_m, k = 4) +
+    s(x_utm, y_utm, k = 15),
+  data = perennial_test_dat,
+  family = quasibinomial(),
+  method = "REML"
+)
+
+m_perennial_ph_smooth <- gam(
+  cbind(perennial_abundance, other_abundance) ~
+    s(p_h_2, k = 4) + elevation + ca + mg + slope +
+    topographic_wetness_index_usgs + ndvi_sept_2022 +
+    s(dist_to_current_m, k = 4) +
+    s(x_utm, y_utm, k = 15),
+  data = perennial_test_dat,
+  family = quasibinomial(),
+  method = "REML"
+)
+
+tibble(
+  model = c("perennial pH linear", "perennial pH smooth"),
+  dev_expl = c(summary(m_perennial_ph_linear)$dev.expl,
+               summary(m_perennial_ph_smooth)$dev.expl)
+)
+
+summary(m_perennial_ph_smooth)
+
+sedge_test_dat <- sedge_dat %>%
+  select(
+    sedge_abundance, other_abundance,
+    dist_to_current_m, x_utm, y_utm,
+    p_h_2, elevation, topographic_wetness_index_usgs,
+    ca, mg, slope, ndvi_sept_2022
+  ) %>%
+  mutate(across(everything(), as.numeric)) %>%
+  drop_na()
+
+m_sedge_ph_linear <- gam(
+  cbind(sedge_abundance, other_abundance) ~
+    p_h_2 + elevation + topographic_wetness_index_usgs +
+    ca + mg + slope + ndvi_sept_2022 +
+    s(dist_to_current_m, k = 4) +
+    s(x_utm, y_utm, k = 15),
+  data = sedge_test_dat,
+  family = quasibinomial(),
+  method = "REML"
+)
+
+m_sedge_ph_smooth <- gam(
+  cbind(sedge_abundance, other_abundance) ~
+    s(p_h_2, k = 4) + elevation + topographic_wetness_index_usgs +
+    ca + mg + slope + ndvi_sept_2022 +
+    s(dist_to_current_m, k = 4) +
+    s(x_utm, y_utm, k = 15),
+  data = sedge_test_dat,
+  family = quasibinomial(),
+  method = "REML"
+)
+
+tibble(
+  model = c("sedge pH linear", "sedge pH smooth"),
+  dev_expl = c(summary(m_sedge_ph_linear)$dev.expl,
+               summary(m_sedge_ph_smooth)$dev.expl)
+)
+
+summary(m_sedge_ph_smooth)
+
+shannon_test_dat <- analysis_dat %>%
+  select(
+    shannon_weiner_diversity_index,
+    dist_to_current_m, x_utm, y_utm,
+    p_h_2, elevation, topographic_wetness_index_usgs,
+    ca, mg, slope, ndvi_sept_2022
+  ) %>%
+  mutate(across(everything(), as.numeric)) %>%
+  drop_na()
+
+m_shannon_ph_linear <- gam(
+  shannon_weiner_diversity_index ~
+    p_h_2 + elevation + topographic_wetness_index_usgs +
+    ca + mg + slope + ndvi_sept_2022 +
+    s(dist_to_current_m, k = 4) +
+    s(x_utm, y_utm, k = 15),
+  data = shannon_test_dat,
+  family = gaussian(),
+  method = "REML"
+)
+
+m_shannon_ph_smooth <- gam(
+  shannon_weiner_diversity_index ~
+    s(p_h_2, k = 4) + elevation + topographic_wetness_index_usgs +
+    ca + mg + slope + ndvi_sept_2022 +
+    s(dist_to_current_m, k = 4) +
+    s(x_utm, y_utm, k = 15),
+  data = shannon_test_dat,
+  family = gaussian(),
+  method = "REML"
+)
+
+tibble(
+  model = c("shannon pH linear", "shannon pH smooth"),
+  dev_expl = c(summary(m_shannon_ph_linear)$dev.expl,
+               summary(m_shannon_ph_smooth)$dev.expl)
+)
+
+summary(m_shannon_ph_smooth)
+
+get_smooth_label <- function(mod, term_pattern) {
+  sm <- summary(mod)
+  st <- as.data.frame(sm$s.table)
+  st$term <- rownames(st)
+
+  rr <- st[grepl(term_pattern, st$term), , drop = FALSE]
+
+  if (nrow(rr) == 0) return("smooth not found")
+
+  paste0(
+    "nonlinear",
+    "\nedf = ", round(rr$edf[1], 2),
+    "\np = ", signif(rr$`p-value`[1], 3)
+  )
+}
+
+#Nonlinearity checks indicated little evidence for threshold-like responses for most of the tested gradients.
+```
+#### Indicator species analysis
+
+```{r}
+env_groups <- analysis_dat %>%
+  select(
+    row_num,
+    dist_to_current_m,
+    p_h_2,
+    elevation,
+    topographic_wetness_index_usgs,
+    slope,
+    ndvi_sept_2022
+  ) %>%
+  distinct(row_num, .keep_all = TRUE) %>%
+  mutate(
+    dist_group = cut(
+      dist_to_current_m,
+      breaks = quantile(dist_to_current_m, probs = c(0, 1/3, 2/3, 1), na.rm = TRUE),
+      include.lowest = TRUE,
+      labels = c("Near", "Mid", "Far")
+    ),
+    ph_group = cut(
+      p_h_2,
+      breaks = quantile(p_h_2, probs = c(0, 1/3, 2/3, 1), na.rm = TRUE),
+      include.lowest = TRUE,
+      labels = c("Low_pH", "Mid_pH", "High_pH")
+    ),
+    elev_group = cut(
+      elevation,
+      breaks = quantile(elevation, probs = c(0, 1/3, 2/3, 1), na.rm = TRUE),
+      include.lowest = TRUE,
+      labels = c("Low_elev", "Mid_elev", "High_elev")
+    ),
+    twi_group = cut(
+      topographic_wetness_index_usgs,
+      breaks = quantile(topographic_wetness_index_usgs, probs = c(0, 1/3, 2/3, 1), na.rm = TRUE),
+      include.lowest = TRUE,
+      labels = c("Dry", "Mid_wetness", "Wet")
+    ),
+    slope_group = cut(
+      slope,
+      breaks = quantile(slope, probs = c(0, 1/3, 2/3, 1), na.rm = TRUE),
+      include.lowest = TRUE,
+      labels = c("Low_slope", "Mid_slope", "High_slope")
+    ),
+    ndvi_group = cut(
+      ndvi_sept_2022,
+      breaks = quantile(ndvi_sept_2022, probs = c(0, 1/3, 2/3, 1), na.rm = TRUE),
+      include.lowest = TRUE,
+      labels = c("Low_NDVI", "Mid_NDVI", "High_NDVI")
+    )
+  )
+
+summary(env_groups)
+
+species_tbl <- weed_trait_long %>%
+  filter(!is.na(weed_species), weed_species != "", !is.na(weed_count)) %>%
+  group_by(row_num, weed_species) %>%
+  summarise(abund = sum(weed_count, na.rm = TRUE), .groups = "drop") %>%
+  pivot_wider(
+    names_from = weed_species,
+    values_from = abund,
+    values_fill = 0
+  ) %>%
+  clean_names()
+
+species_mat <- species_tbl %>%
+  column_to_rownames("row_num") %>%
+  as.matrix()
+
+func_tbl <- weed_trait_long %>%
+  mutate(
+    func_group = case_when(
+      !is.na(life_cycle) & !is.na(type) ~ paste(life_cycle, type, sep = "_"),
+      TRUE ~ NA_character_
+    )
+  ) %>%
+  filter(!is.na(func_group), !is.na(weed_count)) %>%
+  group_by(row_num, func_group) %>%
+  summarise(abund = sum(weed_count, na.rm = TRUE), .groups = "drop") %>%
+  pivot_wider(
+    names_from = func_group,
+    values_from = abund,
+    values_fill = 0
+  ) %>%
+  clean_names()
+
+func_mat <- func_tbl %>%
+  column_to_rownames("row_num") %>%
+  as.matrix()
+
+min_occ <- 5
+
+species_mat_filt <- species_mat[, colSums(species_mat > 0) >= min_occ, drop = FALSE]
+family_mat_filt  <- family_mat[, colSums(family_mat > 0) >= min_occ, drop = FALSE]
+func_mat_filt    <- func_mat[, colSums(func_mat > 0) >= min_occ, drop = FALSE]
+
+align_comm_groups <- function(comm_mat, env_groups, group_var) {
+  dat <- env_groups %>%
+    select(row_num, all_of(group_var)) %>%
+    drop_na()
+
+  ids <- intersect(rownames(comm_mat), dat$row_num)
+
+  comm_use <- comm_mat[ids, , drop = FALSE]
+
+  grp_use <- dat %>%
+    filter(row_num %in% ids) %>%
+    arrange(match(row_num, ids)) %>%
+    pull(all_of(group_var))
+
+  list(
+    comm = comm_use,
+    groups = factor(grp_use),
+    ids = ids
+  )
+}
+
+run_indicator <- function(comm_mat, env_groups, group_var, nperm = 999) {
+  aligned <- align_comm_groups(comm_mat, env_groups, group_var)
+
+  ind <- multipatt(
+    aligned$comm,
+    cluster = aligned$groups,
+    func = "IndVal.g",
+    control = how(nperm = nperm)
+  )
+
+  ind
+}
+
+ind_species_dist <- run_indicator(species_mat_filt, env_groups, "dist_group")
+ind_family_dist  <- run_indicator(family_mat_filt, env_groups, "dist_group")
+ind_func_dist    <- run_indicator(func_mat_filt, env_groups, "dist_group")
+
+ind_species_ph <- run_indicator(species_mat_filt, env_groups, "ph_group")
+ind_family_ph  <- run_indicator(family_mat_filt, env_groups, "ph_group")
+ind_func_ph    <- run_indicator(func_mat_filt, env_groups, "ph_group")
+
+ind_species_twi <- run_indicator(species_mat_filt, env_groups, "twi_group")
+ind_family_twi  <- run_indicator(family_mat_filt, env_groups, "twi_group")
+ind_func_twi    <- run_indicator(func_mat_filt, env_groups, "twi_group")
+
+ind_species_elev <- run_indicator(species_mat_filt, env_groups, "elev_group")
+ind_family_elev  <- run_indicator(family_mat_filt, env_groups, "elev_group")
+ind_func_elev    <- run_indicator(func_mat_filt, env_groups, "elev_group")
+summary(ind_species_dist)
+summary(ind_family_dist)
+summary(ind_func_dist)
+
+summary(ind_species_ph)
+summary(ind_family_ph)
+summary(ind_func_ph)
+
+summary(ind_species_twi)
+summary(ind_family_twi)
+summary(ind_func_twi)
+
+summary(ind_species_elev)
+summary(ind_family_elev)
+summary(ind_func_elev)
+
+
+#sedge-related weeds are associated with the wetter half of the field... that association shows up both at the family level and the functional-group/species level
+
+# Indicators: 
+#   
+#   sedges are tied to low/wet parts of the field  
+#   
+#   higher parts of the field support a different broadleaf assemblage  
+#   
+#   disturbance bins matter some, but mostly through a few species  
+#   
+#   pH matters, but more as a gradual filter than as a source of distinct indicator communities 
+
+
 
 ```
 
